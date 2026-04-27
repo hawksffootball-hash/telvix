@@ -4,6 +4,7 @@ import { Loader2 } from "lucide-react";
 import { api } from "../lib/api";
 import { useAuth } from "../context/AuthContext";
 import PosterCard, { LiveCard } from "../components/PosterCard";
+import Row from "../components/Row";
 
 export default function CatalogPage({ type }) {
   const { creds } = useAuth();
@@ -53,6 +54,15 @@ export default function CatalogPage({ type }) {
     return items.filter((it) => String(it.category_id) === String(activeCat));
   }, [items, activeCat]);
 
+  // Últimos 50 agregados (ordenados por timestamp `added` descendente)
+  const latest = useMemo(() => {
+    if (type === "live") return [];
+    return [...items]
+      .filter((it) => it.added)
+      .sort((a, b) => Number(b.added) - Number(a.added))
+      .slice(0, 50);
+  }, [items, type]);
+
   const openItem = (it, idx) => {
     if (type === "series") {
       navigate(`/series/${it.series_id}`, { state: it });
@@ -93,13 +103,30 @@ export default function CatalogPage({ type }) {
       ) : filtered.length === 0 ? (
         <div className="text-neutral-500 text-xl py-20 text-center">No hay contenido disponible</div>
       ) : (
-        <div
-          className={
-            type === "live"
-              ? "grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-6"
-              : "grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-7 gap-6"
-          }
-        >
+        <>
+          {type !== "live" && latest.length > 0 && activeCat === "all" && (
+            <div className="mb-12">
+              <Row title="Últimos 50 agregados" testid="row-latest">
+                {latest.map((it, idx) => (
+                  <PosterCard
+                    key={`latest-${it.stream_id || it.series_id}`}
+                    testid={`latest-${type}-${idx}`}
+                    title={it.name}
+                    image={it.stream_icon || it.cover}
+                    meta={it.rating ? `★ ${it.rating}` : null}
+                    onActivate={() => openItem(it, idx)}
+                  />
+                ))}
+              </Row>
+            </div>
+          )}
+          <div
+            className={
+              type === "live"
+                ? "grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-6"
+                : "grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-7 gap-6"
+            }
+          >
           {filtered.slice(0, 300).map((it, idx) => {
             const common = {
               key: (it.stream_id || it.series_id || it._idx || idx) + "-" + idx,
@@ -111,6 +138,7 @@ export default function CatalogPage({ type }) {
             return type === "live" ? <LiveCard {...common} /> : <PosterCard {...common} />;
           })}
         </div>
+        </>
       )}
     </div>
   );

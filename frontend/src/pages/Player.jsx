@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState, useCallback } from "react";
 import { useParams, useLocation, useNavigate } from "react-router-dom";
 import Hls from "hls.js";
-import { ArrowLeft, Loader2, Play, Pause, Volume2, VolumeX, Star, StarOff } from "lucide-react";
+import { ArrowLeft, Loader2, Play, Pause, Volume2, VolumeX, Star, StarOff, Languages, Subtitles } from "lucide-react";
 import { api, buildXtreamUrl, playableUrl } from "../lib/api";
 import { useAuth } from "../context/AuthContext";
 import { toast } from "sonner";
@@ -25,6 +25,11 @@ export default function Player() {
   const [fav, setFav] = useState(false);
   const [error, setError] = useState(null);
   const [epg, setEpg] = useState([]);
+  const [audioTracks, setAudioTracks] = useState([]);
+  const [audioIdx, setAudioIdx] = useState(-1);
+  const [subTracks, setSubTracks] = useState([]);
+  const [subIdx, setSubIdx] = useState(-1);
+  const [openMenu, setOpenMenu] = useState(null); // 'audio' | 'subs' | null
 
   const showControls = useCallback(() => {
     setShowUI(true);
@@ -74,6 +79,36 @@ export default function Player() {
       hls.on(Hls.Events.MANIFEST_PARSED, () => {
         setLoading(false);
         video.play().catch(() => {});
+        const at = (hls.audioTracks || []).map((t, i) => ({
+          id: i,
+          label: t.name || t.lang || `Audio ${i + 1}`,
+          lang: t.lang || "",
+        }));
+        setAudioTracks(at);
+        setAudioIdx(hls.audioTrack ?? (at.length ? 0 : -1));
+        const st = (hls.subtitleTracks || []).map((t, i) => ({
+          id: i,
+          label: t.name || t.lang || `Subtítulos ${i + 1}`,
+          lang: t.lang || "",
+        }));
+        setSubTracks(st);
+        setSubIdx(typeof hls.subtitleTrack === "number" ? hls.subtitleTrack : -1);
+      });
+      hls.on(Hls.Events.AUDIO_TRACKS_UPDATED, () => {
+        const at = (hls.audioTracks || []).map((t, i) => ({
+          id: i,
+          label: t.name || t.lang || `Audio ${i + 1}`,
+          lang: t.lang || "",
+        }));
+        setAudioTracks(at);
+      });
+      hls.on(Hls.Events.SUBTITLE_TRACKS_UPDATED, () => {
+        const st = (hls.subtitleTracks || []).map((t, i) => ({
+          id: i,
+          label: t.name || t.lang || `Subtítulos ${i + 1}`,
+          lang: t.lang || "",
+        }));
+        setSubTracks(st);
       });
       hls.on(Hls.Events.ERROR, (_, data) => {
         if (data.fatal) {
@@ -83,7 +118,27 @@ export default function Player() {
       });
     } else {
       video.src = src;
-      video.addEventListener("loadeddata", () => setLoading(false), { once: true });
+      video.addEventListener("loadeddata", () => {
+        setLoading(false);
+        const aT = video.audioTracks ? Array.from(video.audioTracks) : [];
+        setAudioTracks(
+          aT.map((t, i) => ({
+            id: i,
+            label: t.label || t.language || `Audio ${i + 1}`,
+            lang: t.language || "",
+          }))
+        );
+        setAudioIdx(aT.findIndex((t) => t.enabled));
+        const tT = video.textTracks ? Array.from(video.textTracks) : [];
+        setSubTracks(
+          tT.map((t, i) => ({
+            id: i,
+            label: t.label || t.language || `Subtítulos ${i + 1}`,
+            lang: t.language || "",
+          }))
+        );
+        setSubIdx(tT.findIndex((t) => t.mode === "showing"));
+      }, { once: true });
       video.addEventListener(
         "error",
         () => {
@@ -227,6 +282,33 @@ export default function Player() {
     showControls();
   };
 
+  const setAudio = (idx) => {
+    if (hlsRef.current) {
+      hlsRef.current.audioTrack = idx;
+    } else if (videoRef.current?.audioTracks) {
+      Array.from(videoRef.current.audioTracks).forEach((t, i) => {
+        t.enabled = i === idx;
+      });
+    }
+    setAudioIdx(idx);
+    setOpenMenu(null);
+    showControls();
+  };
+
+  const setSubs = (idx) => {
+    if (hlsRef.current) {
+      hlsRef.current.subtitleTrack = idx;
+      hlsRef.current.subtitleDisplay = idx >= 0;
+    } else if (videoRef.current?.textTracks) {
+      Array.from(videoRef.current.textTracks).forEach((t, i) => {
+        t.mode = i === idx ? "showing" : "disabled";
+      });
+    }
+    setSubIdx(idx);
+    setOpenMenu(null);
+    showControls();
+  };
+
   // Key handling for TV remote
   useEffect(() => {
     const onKey = (e) => {
@@ -357,12 +439,81 @@ export default function Player() {
             >
               {muted ? <VolumeX className="w-6 h-6" /> : <Volume2 className="w-6 h-6" />}
             </button>
-            <div className="text-sm text-neutral-400 ml-2">
+            {audioTracks.length > 1 && (
+              <button
+                onClick={() => setOpenMenu(openMenu === "audio" ? null : "audio")}
+                data-testid="player-audio-btn"
+                className={`focus-tv backdrop-blur-md rounded-full p-5 outline-none flex items-center gap-2 ${
+                  openMenu === "audio" ? "bg-[#FFB800] text-black" : "bg-black/60"
+                }`}
+              >
+                <Languages className="w-6 h-6" />
+                <span className="text-sm font-semibold uppercase tracking-wider hidden md:inline">
+                  Audio
+                </span>
+              </button>
+            )}
+            {(subTracks.length > 0) && (
+              <button
+                onClick={() => setOpenMenu(openMenu === "subs" ? null : "subs")}
+                data-testid="player-subs-btn"
+                className={`focus-tv backdrop-blur-md rounded-full p-5 outline-none flex items-center gap-2 ${
+                  openMenu === "subs" ? "bg-[#FFB800] text-black" : "bg-black/60"
+                }`}
+              >
+                <Subtitles className="w-6 h-6" />
+                <span className="text-sm font-semibold uppercase tracking-wider hidden md:inline">
+                  CC {subIdx >= 0 ? "ON" : "OFF"}
+                </span>
+              </button>
+            )}
+            <div className="text-sm text-neutral-400 ml-2 hidden lg:block">
               ← → saltar 10s · Espacio play/pausa · Esc volver
             </div>
           </div>
         </div>
       </div>
+
+      {/* Audio / Subs menu */}
+      {openMenu && (
+        <div
+          className="absolute right-8 bottom-32 z-30 bg-[#0a0a0a]/95 backdrop-blur-xl border border-neutral-800 rounded-2xl p-3 min-w-[280px] max-h-[60vh] overflow-y-auto"
+          data-testid={`player-${openMenu}-menu`}
+        >
+          <div className="text-xs uppercase tracking-[0.3em] text-[#FFB800] font-bold px-4 py-3">
+            {openMenu === "audio" ? "Pista de audio" : "Subtítulos"}
+          </div>
+          {openMenu === "subs" && (
+            <button
+              onClick={() => setSubs(-1)}
+              data-testid="player-sub-off"
+              className={`focus-tv w-full text-left px-4 py-3 rounded-xl transition-colors outline-none ${
+                subIdx === -1 ? "bg-[#FFB800] text-black font-bold" : "text-neutral-300 hover:bg-white/5"
+              }`}
+            >
+              Desactivado
+            </button>
+          )}
+          {(openMenu === "audio" ? audioTracks : subTracks).map((t, i) => {
+            const active = openMenu === "audio" ? audioIdx === t.id : subIdx === t.id;
+            return (
+              <button
+                key={t.id}
+                onClick={() => (openMenu === "audio" ? setAudio(t.id) : setSubs(t.id))}
+                data-testid={`player-${openMenu}-${i}`}
+                className={`focus-tv w-full text-left px-4 py-3 rounded-xl transition-colors outline-none ${
+                  active ? "bg-[#FFB800] text-black font-bold" : "text-neutral-300 hover:bg-white/5"
+                }`}
+              >
+                <div className="flex items-center justify-between">
+                  <span>{t.label}</span>
+                  {t.lang && <span className="text-xs uppercase opacity-60">{t.lang}</span>}
+                </div>
+              </button>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }

@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useEffect, useMemo, useState } from "react";
+import React, { createContext, useContext, useMemo, useState, useEffect } from "react";
 
 const AuthContext = createContext(null);
 
@@ -14,20 +14,26 @@ function uuid() {
 }
 
 export function AuthProvider({ children }) {
-  const [creds, setCreds] = useState(null);
-  const [clientId, setClientId] = useState(null);
-
-  useEffect(() => {
+  const [creds, setCreds] = useState(() => {
     try {
-      const raw = localStorage.getItem(CREDS_KEY);
-      if (raw) setCreds(JSON.parse(raw));
-    } catch {}
+      const raw = typeof window !== "undefined" ? localStorage.getItem(CREDS_KEY) : null;
+      return raw ? JSON.parse(raw) : null;
+    } catch {
+      return null;
+    }
+  });
+  const [clientId, setClientId] = useState(() => {
+    if (typeof window === "undefined") return null;
     let cid = localStorage.getItem(CLIENT_KEY);
     if (!cid) {
       cid = uuid();
       localStorage.setItem(CLIENT_KEY, cid);
     }
-    setClientId(cid);
+    return cid;
+  });
+
+  useEffect(() => {
+    // No-op: state already initialised from localStorage. Kept for future side effects.
   }, []);
 
   const login = (c) => {
