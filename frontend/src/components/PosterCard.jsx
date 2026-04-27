@@ -44,7 +44,7 @@ export default function PosterCard({ title, image, meta, onActivate, testid, asp
   );
 }
 
-export function LiveCard({ title, image, onActivate, testid }) {
+export function LiveCard({ title, image, onActivate, onFocus, onMouseEnter, testid }) {
   const [err, setErr] = useState(false);
   const handleKey = (e) => {
     if (e.key === "Enter" || e.key === " ") {
@@ -57,6 +57,8 @@ export function LiveCard({ title, image, onActivate, testid }) {
       type="button"
       onClick={onActivate}
       onKeyDown={handleKey}
+      onFocus={onFocus}
+      onMouseEnter={onMouseEnter}
       data-testid={testid}
       className="poster-focus group relative rounded-xl overflow-hidden bg-neutral-900 w-full text-left outline-none aspect-video flex flex-col items-center justify-center p-4 border-0"
     >

@@ -5,6 +5,7 @@ import { api } from "../lib/api";
 import { useAuth } from "../context/AuthContext";
 import PosterCard, { LiveCard } from "../components/PosterCard";
 import Row from "../components/Row";
+import LivePreview from "../components/LivePreview";
 
 export default function CatalogPage({ type }) {
   const { creds } = useAuth();
@@ -12,8 +13,9 @@ export default function CatalogPage({ type }) {
   const [activeCat, setActiveCat] = useState("all");
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [sortBy, setSortBy] = useState("recent"); // 'recent' | 'alpha'
+  const [sortBy, setSortBy] = useState("recent");
   const [query, setQuery] = useState("");
+  const [hovered, setHovered] = useState(null);
   const navigate = useNavigate();
 
   const title = { live: "En Vivo", vod: "Películas", series: "Series" }[type];
@@ -190,6 +192,18 @@ export default function CatalogPage({ type }) {
           <div className="text-neutral-500 text-xl py-20 text-center">No hay contenido disponible</div>
         ) : (
           <>
+            {type === "live" && (
+              <LivePreview
+                channel={hovered}
+                creds={creds}
+                onPlay={(ch) => {
+                  const idx = filtered.findIndex(
+                    (c) => String(c.stream_id) === String(ch.stream_id)
+                  );
+                  openItem(ch, idx >= 0 ? idx : 0);
+                }}
+              />
+            )}
             {type !== "live" && activeCat === "all" && !query.trim() ? (
               // Vista estilo Netflix: una fila por categoría
               <div className="space-y-12">
@@ -239,6 +253,10 @@ export default function CatalogPage({ type }) {
                   onActivate: () => openItem(it, idx),
                   testid: `${type}-item-${idx}`,
                 };
+                if (type === "live") {
+                  common.onFocus = () => setHovered(it);
+                  common.onMouseEnter = () => setHovered(it);
+                }
                 return type === "live" ? <LiveCard {...common} /> : <PosterCard {...common} />;
               })}
             </div>
