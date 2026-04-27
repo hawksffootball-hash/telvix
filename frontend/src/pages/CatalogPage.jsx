@@ -55,8 +55,8 @@ export default function CatalogPage({ type }) {
 
   const sortFn = (a, b) => {
     if (sortBy === "alpha") return (a.name || "").localeCompare(b.name || "");
-    // recent (added desc)
-    return Number(b.added || 0) - Number(a.added || 0);
+    // recent: usa added (vod) o last_modified (series)
+    return Number(b.added || b.last_modified || 0) - Number(a.added || a.last_modified || 0);
   };
 
   const filtered = useMemo(() => {
@@ -86,12 +86,12 @@ export default function CatalogPage({ type }) {
       .filter((c) => c.items.length > 0);
   }, [items, categories, type, sortBy]);
 
-  // Últimos 50 agregados (ordenados por timestamp `added` descendente)
+  // Últimos 50 agregados (added vod / last_modified series)
   const latest = useMemo(() => {
     if (type === "live") return [];
     return [...items]
-      .filter((it) => it.added)
-      .sort((a, b) => Number(b.added) - Number(a.added))
+      .filter((it) => it.added || it.last_modified)
+      .sort((a, b) => Number(b.added || b.last_modified || 0) - Number(a.added || a.last_modified || 0))
       .slice(0, 50);
   }, [items, type]);
 
