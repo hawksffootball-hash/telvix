@@ -1,0 +1,46 @@
+{
+  "summary": "Backend-only test pass for TV Stream API. 15/15 pytest tests passed after fixing a proxy bug. Verified Xtream endpoints (login/categories/streams) error contracts with fake creds, real M3U parse from iptv-org (categories+total>0), proxy_stream over external URL, favorites CRUD with no _id leakage and idempotent upsert, plus CORS.",
+  "backend_issues": {
+    "critical": [
+      {
+        "endpoint": "GET /api/proxy/stream",
+        "issue": "Was returning 503 via ingress for non-m3u8 URLs. Root cause: code forwarded upstream Content-Length while httpx auto-decompressed gzip body -> h11 LocalProtocolError 'Too much data for declared Content-Length'. FIXED by removing content-length forwarding (Response sets it correctly).",
+        "priority": "HIGH"
+      }
+    ],
+    "minor": [
+      {"endpoint": "POST /api/xtream/login", "issue": "Login uses 502 (not 401) when server is unreachable; that is acceptable but UI should map both to 'credenciales/servidor' message."},
+      {"endpoint": "GET /api/proxy/stream", "issue": "No request timeout-specific handling beyond shared 30s; large/long-lived HLS segments may time out."},
+      {"endpoint": "GET /api/proxy/stream", "issue": "Streams entire body into memory (upstream.content + Response). For VOD .ts segments this is fine but full VOD downloads through proxy will buffer in RAM. Consider StreamingResponse with httpx.stream() for large bodies."}
+    ]
+  },
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": [
+    "/app/backend/tests/backend_test.py",
+    "/app/test_reports/pytest/pytest_results.xml"
+  ],
+  "action_items": [
+    "Verify the proxy fix in /app/backend/server.py (content-length removed from forwarded headers).",
+    "Consider StreamingResponse + httpx.stream for large media segments to avoid loading bodies into memory.",
+    "Optionally normalize all Xtream upstream errors to 401 when user_info is missing (currently 502 for unreachable host)."
+  ],
+  "critical_code_review_comments": [
+    "server.py proxy forwarded content-length while httpx decompresses gzip — caused 503 via ingress (now fixed).",
+    "proxy_stream loads full upstream.content in memory; not suitable for video/segment streaming at scale.",
+    "Favorites endpoints correctly exclude _id via projection {_id:0} and Pydantic FavoriteItem — no ObjectId leakage observed.",
+    "Single shared httpx.AsyncClient with follow_redirects=True is good; shutdown handler closes it. OK.",
+    "CORS allow_origins from env defaults to '*' with allow_credentials=True — browsers will reject cookies in this combo. Acceptable for this app (no auth cookies) but worth flagging.",
+    "M3U parser reads entire body into memory; fine for typical playlists; iptv-org index.m3u parsed successfully (10000+ entries)."
+  ],
+  "updated_files": [
+    "/app/backend/server.py (removed content-length forwarding in proxy_stream)",
+    "/app/backend/tests/backend_test.py (new pytest suite)"
+  ],
+  "success_rate": {"backend": "100%", "frontend": "n/a"},
+  "test_credentials": "None required; favorites tested with TEST_-prefixed client_id (auto-cleaned).",
+  "seed_data_creation": "Favorites docs created with client_id prefix TEST_<uuid8> and cleaned up via teardown fixture.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Backend fully green. Run `pytest backend/tests/backend_test.py` to regress. Proxy fix is the only behavioural change. For frontend testing next, use REACT_APP_BACKEND_URL from /app/frontend/.env. The /api/proxy/stream endpoint can be exercised with https://raw.githubusercontent.com/iptv-org/iptv/master/README.md as a safe small file.",
+  "rca_of_the_issue": "Bug: GET /api/proxy/stream for non-m3u8 URLs returned 503 via the public ingress (200 sometimes locally). Reproduction: curl https://<public>/api/proxy/stream?u=https://raw.githubusercontent.com/iptv-org/iptv/master/README.md -> 503; backend log showed 'h11._util.LocalProtocolError: Too much data for declared Content-Length'. RCA: in proxy_stream, the response forwarded the upstream Content-Length header. httpx auto-decompresses gzip, so upstream.content is the decompressed body whose length differs from the original Content-Length header. Starlette/h11 then raised when sending more bytes than the declared length. Mitigation: stop forwarding content-length (let Starlette compute it). Optionally use httpx.stream() with StreamingResponse for true pass-through."
+}
