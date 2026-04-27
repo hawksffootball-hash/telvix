@@ -1,0 +1,18 @@
+{
+    "id": "com.televix.app",
+    "version": "1.0.0",
+    "vendor": "Televix",
+    "type": "web",
+    "main": "index.html",
+    "title": "Televix",
+    "icon": "icon.png",
+    "largeIcon": "icon-large.png",
+    "iconColor": "#FFB800",
+    "appDescription": "Reproductor IPTV Xtream Codes y M3U para LG webOS",
+    "resolution": "1920x1080",
+    "uiRevision": 2,
+    "disableBackHistoryAPI": true,
+    "supportTouchMode": "none",
+    "handlesRelaunch": true,
+    "useGalleryMode": false
+}

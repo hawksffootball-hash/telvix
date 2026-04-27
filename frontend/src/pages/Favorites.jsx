@@ -27,6 +27,8 @@ export default function Favorites() {
   const open = (it) => {
     if (it.type === "series") {
       navigate(`/series/${it.stream_id}`, { state: it.extra });
+    } else if (it.type === "vod") {
+      navigate(`/vod/${it.stream_id}`, { state: it.extra });
     } else {
       navigate(`/player/${it.type}/${it.stream_id}`, { state: it.extra });
     }

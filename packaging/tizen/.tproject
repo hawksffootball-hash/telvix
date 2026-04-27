@@ -1,0 +1,15 @@
+[T-App]
+id=televix01
+version=1.0.0
+type=webapp
+name=Televix
+icon=icon.png
+content=index.html
+sourceDir=
+
+[Build]
+output=Televix.wgt
+
+[Tizen]
+profile=tv-samsung
+required_version=4.0

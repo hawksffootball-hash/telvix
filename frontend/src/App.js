@@ -8,6 +8,7 @@ import Login from "./pages/Login";
 import Home from "./pages/Home";
 import CatalogPage from "./pages/CatalogPage";
 import SeriesDetail from "./pages/SeriesDetail";
+import VodDetail from "./pages/VodDetail";
 import Favorites from "./pages/Favorites";
 import Search from "./pages/Search";
 import Player from "./pages/Player";
@@ -75,6 +76,16 @@ export default function App() {
                 <Guard>
                   <Shelled>
                     <SeriesDetail />
+                  </Shelled>
+                </Guard>
+              }
+            />
+            <Route
+              path="/vod/:id"
+              element={
+                <Guard>
+                  <Shelled>
+                    <VodDetail />
                   </Shelled>
                 </Guard>
               }

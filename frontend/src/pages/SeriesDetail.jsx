@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { useParams, useLocation, useNavigate } from "react-router-dom";
 import { Loader2, Play, Star, ArrowLeft } from "lucide-react";
-import { api } from "../lib/api";
+import { api, playableUrl } from "../lib/api";
 import { useAuth } from "../context/AuthContext";
 
 export default function SeriesDetail() {
@@ -51,7 +51,7 @@ export default function SeriesDetail() {
         <div
           className="absolute inset-0"
           style={{
-            backgroundImage: `url(${meta.backdrop_path?.[0] || meta.cover || ""})`,
+            backgroundImage: `url(${playableUrl(meta.backdrop_path?.[0] || meta.cover || "")})`,
             backgroundSize: "cover",
             backgroundPosition: "center",
           }}
@@ -115,7 +115,7 @@ export default function SeriesDetail() {
             >
               <div className="aspect-video bg-neutral-900 rounded-xl mb-4 flex items-center justify-center overflow-hidden relative">
                 {ep.info?.movie_image ? (
-                  <img src={ep.info.movie_image} alt={ep.title} className="w-full h-full object-cover" />
+                  <img src={playableUrl(ep.info.movie_image)} alt={ep.title} className="w-full h-full object-cover" />
                 ) : (
                   <Play className="w-12 h-12 text-[#FFB800]" />
                 )}

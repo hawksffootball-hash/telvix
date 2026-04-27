@@ -157,6 +157,55 @@ export default function Player() {
     }
   };
 
+  // Save progress to history (every 10s) for VOD/series
+  useEffect(() => {
+    if (type === "live" || !clientId) return;
+    const v = videoRef.current;
+    if (!v) return;
+    const tick = setInterval(() => {
+      const pos = v.currentTime || 0;
+      const dur = v.duration || 0;
+      if (pos < 5 || dur === 0 || isNaN(dur)) return;
+      api
+        .post("/history", {
+          client_id: clientId,
+          type,
+          stream_id: String(id),
+          name: title,
+          icon: state?.stream_icon || state?.cover || state?.info?.movie_image || null,
+          position: pos,
+          duration: dur,
+          extra: state || null,
+        })
+        .catch(() => {});
+    }, 10000);
+    return () => clearInterval(tick);
+  }, [type, id, clientId, title, state]);
+
+  // Resume position once metadata loads
+  useEffect(() => {
+    if (type === "live" || !clientId) return;
+    const v = videoRef.current;
+    if (!v) return;
+    let done = false;
+    const onMeta = async () => {
+      if (done) return;
+      done = true;
+      try {
+        const { data } = await api.get("/history", { params: { client_id: clientId } });
+        const entry = data.find(
+          (h) => h.type === type && String(h.stream_id) === String(id)
+        );
+        if (entry && entry.position > 10 && entry.position < (v.duration || 1e9) - 30) {
+          v.currentTime = entry.position;
+          toast(`Reanudado desde ${Math.floor(entry.position / 60)}:${String(Math.floor(entry.position % 60)).padStart(2, "0")}`);
+        }
+      } catch {}
+    };
+    v.addEventListener("loadedmetadata", onMeta, { once: true });
+    return () => v.removeEventListener("loadedmetadata", onMeta);
+  }, [type, id, clientId, src]);
+
   const togglePlay = () => {
     const v = videoRef.current;
     if (!v) return;

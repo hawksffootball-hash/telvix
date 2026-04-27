@@ -57,7 +57,7 @@ export default function CatalogPage({ type }) {
     if (type === "series") {
       navigate(`/series/${it.series_id}`, { state: it });
     } else if (type === "vod") {
-      navigate(`/player/vod/${it.stream_id}`, { state: it });
+      navigate(`/vod/${it.stream_id}`, { state: it });
     } else {
       if (creds.mode === "xtream") navigate(`/player/live/${it.stream_id}`, { state: it });
       else navigate(`/player/m3u/${idx}`, { state: it });

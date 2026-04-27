@@ -82,6 +82,31 @@ class FavoriteCreate(BaseModel):
     extra: Optional[Dict[str, Any]] = None
 
 
+class HistoryItem(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    client_id: str
+    type: str
+    stream_id: str
+    name: str
+    icon: Optional[str] = None
+    position: float = 0.0
+    duration: float = 0.0
+    extra: Optional[Dict[str, Any]] = None
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+
+class HistoryUpsert(BaseModel):
+    client_id: str
+    type: str
+    stream_id: str
+    name: str
+    icon: Optional[str] = None
+    position: float = 0.0
+    duration: float = 0.0
+    extra: Optional[Dict[str, Any]] = None
+
+
 # ------------------- Helpers -------------------
 def _normalize_server(server: str) -> str:
     s = server.strip().rstrip('/')
@@ -214,50 +239,62 @@ async def m3u_parse(q: M3UQuery):
 # ------------------- Stream Proxy -------------------
 @api_router.get("/proxy/stream")
 async def proxy_stream(request: Request, u: str = Query(...)):
-    """Proxy HLS .m3u8 and .ts segments to avoid mixed-content + CORS."""
-    try:
-        headers = {}
-        # forward Range header if present
-        if "range" in request.headers:
-            headers["Range"] = request.headers["range"]
-        upstream = await http_client.get(u, headers=headers)
-    except Exception as e:
-        raise HTTPException(status_code=502, detail=f"Proxy error: {e}")
+    """Proxy HLS/MP4. Manifests get rewritten so segments go through us.
+    Segments and VOD are streamed without buffering, supporting Range requests."""
+    headers = {"User-Agent": "VLC/3.0.20 LibVLC/3.0.20"}
+    if "range" in request.headers:
+        headers["Range"] = request.headers["range"]
 
-    content = upstream.content
-    media_type = upstream.headers.get("content-type", "application/octet-stream")
+    is_manifest = u.lower().split("?")[0].endswith(".m3u8")
 
-    # Rewrite m3u8 playlist so child URLs are proxied through us
-    if "mpegurl" in media_type.lower() or u.lower().split("?")[0].endswith(".m3u8"):
+    if is_manifest:
         try:
-            text = content.decode("utf-8", errors="replace")
-        except Exception:
-            text = ""
+            upstream = await http_client.get(u, headers=headers)
+        except Exception as e:
+            raise HTTPException(status_code=502, detail=f"Proxy error: {e}")
+        text = upstream.content.decode("utf-8", errors="replace")
         from urllib.parse import urljoin, quote
-        base = u
+        base = str(upstream.url)
+        proxy_base = "/api/proxy/stream?u="
         new_lines = []
-        proxy_base = str(request.url).split("/api/proxy/stream")[0] + "/api/proxy/stream?u="
         for line in text.splitlines():
             s = line.strip()
             if s and not s.startswith("#"):
-                absolute = urljoin(base, s)
-                new_lines.append(proxy_base + quote(absolute, safe=""))
+                new_lines.append(proxy_base + quote(urljoin(base, s), safe=""))
             else:
                 new_lines.append(line)
-        rewritten = "\n".join(new_lines).encode("utf-8")
         return Response(
-            content=rewritten,
+            content="\n".join(new_lines).encode("utf-8"),
             media_type="application/vnd.apple.mpegurl",
             headers={"Access-Control-Allow-Origin": "*"},
         )
 
+    # Stream binary bodies (.ts segments, .mp4 VOD) without buffering whole body.
+    try:
+        req = http_client.build_request("GET", u, headers=headers)
+        upstream = await http_client.send(req, stream=True)
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"Proxy error: {e}")
+
+    media_type = upstream.headers.get("content-type", "application/octet-stream")
     resp_headers = {"Access-Control-Allow-Origin": "*"}
-    # Note: do NOT forward content-length / content-encoding because httpx may have
-    # already decompressed the body, which would cause a Content-Length mismatch.
-    for h in ("content-range", "accept-ranges"):
+    for h in ("content-range", "accept-ranges", "content-length"):
         if h in upstream.headers:
             resp_headers[h.title()] = upstream.headers[h]
-    return Response(content=content, status_code=upstream.status_code, media_type=media_type, headers=resp_headers)
+
+    async def body_iter():
+        try:
+            async for chunk in upstream.aiter_raw():
+                yield chunk
+        finally:
+            await upstream.aclose()
+
+    return StreamingResponse(
+        body_iter(),
+        status_code=upstream.status_code,
+        media_type=media_type,
+        headers=resp_headers,
+    )
 
 
 # ------------------- Favorites -------------------
@@ -286,6 +323,39 @@ async def list_favorites(client_id: str):
 @api_router.delete("/favorites")
 async def remove_favorite(client_id: str, type: str, stream_id: str):
     await db.favorites.delete_one({"client_id": client_id, "type": type, "stream_id": stream_id})
+    return {"ok": True}
+
+
+# ------------------- History (Continuar viendo) -------------------
+@api_router.post("/history", response_model=HistoryItem)
+async def upsert_history(item: HistoryUpsert):
+    obj = HistoryItem(**item.model_dump())
+    doc = obj.model_dump()
+    doc["updated_at"] = doc["updated_at"].isoformat()
+    await db.history.update_one(
+        {"client_id": obj.client_id, "type": obj.type, "stream_id": obj.stream_id},
+        {"$set": doc},
+        upsert=True,
+    )
+    return obj
+
+
+@api_router.get("/history", response_model=List[HistoryItem])
+async def list_history(client_id: str, limit: int = 30):
+    items = (
+        await db.history.find({"client_id": client_id}, {"_id": 0})
+        .sort("updated_at", -1)
+        .to_list(limit)
+    )
+    for it in items:
+        if isinstance(it.get("updated_at"), str):
+            it["updated_at"] = datetime.fromisoformat(it["updated_at"])
+    return items
+
+
+@api_router.delete("/history")
+async def remove_history(client_id: str, type: str, stream_id: str):
+    await db.history.delete_one({"client_id": client_id, "type": type, "stream_id": stream_id})
     return {"ok": True}
 
 

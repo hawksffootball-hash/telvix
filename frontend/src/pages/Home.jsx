@@ -4,15 +4,26 @@ import { api } from "../lib/api";
 import { useAuth } from "../context/AuthContext";
 import Row from "../components/Row";
 import PosterCard, { LiveCard } from "../components/PosterCard";
-import { Loader2, Play } from "lucide-react";
+import { Loader2, Play, History } from "lucide-react";
 
 export default function Home() {
-  const { creds } = useAuth();
+  const { creds, clientId } = useAuth();
   const [live, setLive] = useState([]);
   const [movies, setMovies] = useState([]);
   const [series, setSeries] = useState([]);
+  const [history, setHistory] = useState([]);
   const [loading, setLoading] = useState(true);
   const navigate = useNavigate();
+
+  useEffect(() => {
+    if (!clientId) return;
+    (async () => {
+      try {
+        const { data } = await api.get("/history", { params: { client_id: clientId, limit: 12 } });
+        setHistory(data || []);
+      } catch {}
+    })();
+  }, [clientId]);
 
   useEffect(() => {
     let cancelled = false;
@@ -105,6 +116,33 @@ export default function Home() {
           </div>
         )}
 
+        {!loading && history.length > 0 && (
+          <Row title="Continuar viendo" testid="row-history">
+            {history.map((it, idx) => {
+              const pct = it.duration ? Math.min(100, Math.round((it.position / it.duration) * 100)) : 0;
+              const open = () => {
+                if (it.type === "series") navigate(`/player/series/${it.stream_id}`, { state: it.extra });
+                else if (it.type === "vod") navigate(`/player/vod/${it.stream_id}`, { state: it.extra });
+                else navigate(`/player/${it.type}/${it.stream_id}`, { state: it.extra });
+              };
+              return (
+                <div key={it.id} className="relative">
+                  <PosterCard
+                    testid={`history-card-${idx}`}
+                    title={it.name}
+                    image={it.icon}
+                    meta={`${pct}% visto`}
+                    onActivate={open}
+                  />
+                  <div className="absolute left-2 right-2 bottom-2 h-1.5 bg-black/70 rounded-full overflow-hidden pointer-events-none">
+                    <div className="h-full bg-[#FFB800]" style={{ width: `${pct}%` }} />
+                  </div>
+                </div>
+              );
+            })}
+          </Row>
+        )}
+
         {!loading && live.length > 0 && (
           <Row title="En Vivo" testid="row-live">
             {live.map((it, idx) => (
@@ -132,7 +170,7 @@ export default function Home() {
                 title={it.name}
                 image={it.stream_icon}
                 meta={it.rating ? `★ ${it.rating}` : null}
-                onActivate={() => navigate(`/player/vod/${it.stream_id}`, { state: it })}
+                onActivate={() => navigate(`/vod/${it.stream_id}`, { state: it })}
               />
             ))}
           </Row>

@@ -1,5 +1,6 @@
 import React, { useState } from "react";
 import { Star } from "lucide-react";
+import { playableUrl } from "../lib/api";
 
 export default function PosterCard({ title, image, meta, onActivate, testid, aspect = "2/3" }) {
   const [err, setErr] = useState(false);
@@ -20,7 +21,7 @@ export default function PosterCard({ title, image, meta, onActivate, testid, asp
     >
       {image && !err ? (
         <img
-          src={image}
+          src={playableUrl(image)}
           alt={title}
           onError={() => setErr(true)}
           className="w-full h-full object-cover"
@@ -61,7 +62,7 @@ export function LiveCard({ title, image, onActivate, testid }) {
     >
       {image && !err ? (
         <img
-          src={image}
+          src={playableUrl(image)}
           alt={title}
           onError={() => setErr(true)}
           className="max-h-[60%] max-w-[70%] object-contain"

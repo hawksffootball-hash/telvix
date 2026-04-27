@@ -1,0 +1,50 @@
+{
+  "summary": "Iteration 2 backend-only test pass. 25/25 pytest tests green. Validated new history endpoints, proxy streaming branches (m3u8 rewrite + redirect-aware base + VLC UA + Range forwarding), real Xtream login against playgo.sbs:25461, and all pre-existing favorites/m3u/xtream endpoints.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {
+        "endpoint": "GET /api/proxy/stream (m3u8 branch)",
+        "issue": "Manifest path uses http_client.get (full buffered read) with follow_redirects=True. Works, but no explicit size cap — a malicious/very large 'manifest' (wrong content-type) would be pulled into memory."
+      },
+      {
+        "endpoint": "GET /api/proxy/stream",
+        "issue": "Uses shared 30s timeout for manifest GET; HLS origin servers behind slow CDNs may time out during warm-up. Consider per-branch timeout (e.g., 10s connect, 60s read)."
+      },
+      {
+        "endpoint": "GET /api/proxy/stream (binary branch)",
+        "issue": "When upstream returns non-2xx (e.g. 403/404 from IPTV), we still StreamingResponse with that status. Good, but response body may be an HTML error while Content-Type is preserved — acceptable but could confuse players."
+      },
+      {
+        "endpoint": "POST /api/history",
+        "issue": "No server-side validation that position <= duration or that type ∈ {live,vod,series,movie}. Not blocking, but input is fully trusted."
+      }
+    ]
+  },
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": [
+    "/app/backend/tests/backend_test.py",
+    "/app/test_reports/pytest/pytest_results.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "proxy_stream m3u8 branch correctly uses str(upstream.url) as base (httpx exposes the final URL after redirects) so relative segments resolve against the final host/path — verified with local 302 stub.",
+    "User-Agent 'VLC/3.0.20 LibVLC/3.0.20' is set on both branches — verified via local server capturing UA.",
+    "Binary branch correctly uses httpx.stream=True + aiter_raw() and forwards Content-Range/Accept-Ranges/Content-Length — GitHub Range request returned 206 with proper Content-Range.",
+    "History endpoints are idempotent on (client_id,type,stream_id), exclude _id via projection and Pydantic model, parse ISO datetime back on read, and sort by updated_at desc — all verified.",
+    "Small consistency nit: list_history allows `limit` query param (default 30) but is not documented in OpenAPI response model; fine but consider exposing it in UI.",
+    "Favorites and History share identical upsert + serialize-datetime pattern — could be extracted into a helper to DRY ~15 lines, minor.",
+    "Response model for delete endpoints returns {\"ok\": true}; not a Pydantic model. Fine, but not reflected in OpenAPI schema.",
+    "Shared httpx.AsyncClient has follow_redirects=True AND we rely on that for the manifest base URL — keep these coupled; adding a no-redirect path elsewhere would silently break segment rewrites."
+  ],
+  "updated_files": [
+    "/app/backend/tests/backend_test.py (added 10 new tests for history + proxy m3u8 rewrite + UA + Range + real Xtream login)"
+  ],
+  "success_rate": {"backend": "100%", "frontend": "n/a"},
+  "test_credentials": "Xtream real: http://playgo.sbs:25461 jevus/jevus (reached upstream, auth=1). History/favorites isolated via TEST_<uuid8> client_id and auto-cleaned.",
+  "seed_data_creation": "History docs v1 (vod) upserted and v2 created+deleted; favorites s1 upserted and s2 created+deleted — all under TEST_ client_id, teardown removes any leftovers.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "All 25 backend tests pass reliably in ~6s. Local HTTP stub in tests spins up on 127.0.0.1:<ephemeral> and backend (same container) fetches it to verify m3u8 redirect+rewrite and VLC UA forwarding. If the real Xtream upstream goes down, the real-creds tests auto-skip on 502 rather than fail. Proxy m3u8 branch still buffers the whole manifest into memory; binary branch streams. Frontend can now be tested next.",
+  "rca_of_the_issue": "No new bugs. Proxy m3u8 redirect-aware base and segment rewriting verified via a local 302 → /final/stream.m3u8 stub with relative 'seg1.ts' entries; the proxy emitted '/api/proxy/stream?u=<final-host>/final/seg1.ts' — i.e. urljoin used the post-redirect URL as required."
+}
