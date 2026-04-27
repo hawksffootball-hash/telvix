@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState, useCallback } from "react";
 import { useParams, useLocation, useNavigate } from "react-router-dom";
 import Hls from "hls.js";
-import { ArrowLeft, Loader2, Play, Pause, Volume2, VolumeX, Star, StarOff, Languages, Subtitles } from "lucide-react";
+import { ArrowLeft, Loader2, Play, Pause, Volume2, VolumeX, Star, StarOff, Languages, Subtitles, ChevronLeft, ChevronRight } from "lucide-react";
 import { api, buildXtreamUrl, playableUrl } from "../lib/api";
 import { useAuth } from "../context/AuthContext";
 import { toast } from "sonner";
@@ -308,6 +308,20 @@ export default function Player() {
     showControls();
   };
 
+  // Cambio de canal (solo live, cuando viene state.channels)
+  const channels = state?.channels || [];
+  const channelIndex = state?.channelIndex ?? -1;
+  const goChannel = (offset) => {
+    if (type !== "live" || !channels.length) return;
+    const next = (channelIndex + offset + channels.length) % channels.length;
+    const ch = channels[next];
+    if (!ch) return;
+    navigate(`/player/live/${ch.stream_id}`, {
+      replace: true,
+      state: { ...ch, channels, channelIndex: next },
+    });
+  };
+
   // Key handling for TV remote
   useEffect(() => {
     const onKey = (e) => {
@@ -318,9 +332,15 @@ export default function Player() {
         e.preventDefault();
         togglePlay();
       } else if (e.key === "ArrowLeft") {
-        if (videoRef.current) videoRef.current.currentTime -= 10;
+        if (type === "live") goChannel(-1);
+        else if (videoRef.current) videoRef.current.currentTime -= 10;
       } else if (e.key === "ArrowRight") {
-        if (videoRef.current) videoRef.current.currentTime += 10;
+        if (type === "live") goChannel(1);
+        else if (videoRef.current) videoRef.current.currentTime += 10;
+      } else if (e.key === "PageUp" || e.key === "ChannelUp") {
+        goChannel(1);
+      } else if (e.key === "PageDown" || e.key === "ChannelDown") {
+        goChannel(-1);
       } else if (e.key === "m" || e.key === "M") {
         toggleMute();
       }
@@ -424,87 +444,126 @@ export default function Player() {
             </div>
           )}
           <div className="flex items-center gap-4">
-            <button
-              onClick={togglePlay}
-              data-testid="player-playpause"
-              className="focus-tv bg-[#FFB800] text-black rounded-full p-5 outline-none"
-            >
-              {playing ? <Pause className="w-7 h-7 fill-black" /> : <Play className="w-7 h-7 fill-black" />}
-            </button>
-            <button
-              onClick={toggleMute}
-              data-testid="player-mute"
-              className="focus-tv bg-black/60 backdrop-blur-md rounded-full p-5 outline-none"
-            >
-              {muted ? <VolumeX className="w-6 h-6" /> : <Volume2 className="w-6 h-6" />}
-            </button>
-            {audioTracks.length >= 1 ? (
-              <button
-                onClick={() => setOpenMenu(openMenu === "audio" ? null : "audio")}
-                data-testid="player-audio-btn"
-                className={`focus-tv backdrop-blur-md rounded-full p-5 outline-none flex items-center gap-2 ${
-                  openMenu === "audio" ? "bg-[#FFB800] text-black" : "bg-black/60"
-                }`}
-              >
-                <Languages className="w-6 h-6" />
-                <span className="text-sm font-semibold uppercase tracking-wider hidden md:inline">
-                  Audio
-                </span>
-              </button>
-            ) : type !== "live" ? (
-              <button
-                onClick={() => {
-                  toast.info(
-                    "Este formato (MKV) no expone pistas de audio en navegadores web. Instala la app TV nativa (.wgt / .ipk) para tener selector de idiomas.",
-                    { duration: 6000 }
-                  );
-                  showControls();
-                }}
-                data-testid="player-audio-btn"
-                className="focus-tv bg-black/40 text-neutral-500 backdrop-blur-md rounded-full p-5 outline-none flex items-center gap-2"
-                title="Sin pistas de audio detectables"
-              >
-                <Languages className="w-6 h-6" />
-                <span className="text-sm font-semibold uppercase tracking-wider hidden md:inline">
-                  Audio
-                </span>
-              </button>
-            ) : null}
-            {subTracks.length > 0 ? (
-              <button
-                onClick={() => setOpenMenu(openMenu === "subs" ? null : "subs")}
-                data-testid="player-subs-btn"
-                className={`focus-tv backdrop-blur-md rounded-full p-5 outline-none flex items-center gap-2 ${
-                  openMenu === "subs" ? "bg-[#FFB800] text-black" : "bg-black/60"
-                }`}
-              >
-                <Subtitles className="w-6 h-6" />
-                <span className="text-sm font-semibold uppercase tracking-wider hidden md:inline">
-                  CC {subIdx >= 0 ? "ON" : "OFF"}
-                </span>
-              </button>
-            ) : type !== "live" ? (
-              <button
-                onClick={() => {
-                  toast.info(
-                    "Este formato (MKV) no expone subtítulos en navegadores web. Instala la app TV nativa (.wgt / .ipk) para tener selector de subtítulos.",
-                    { duration: 6000 }
-                  );
-                  showControls();
-                }}
-                data-testid="player-subs-btn"
-                className="focus-tv bg-black/40 text-neutral-500 backdrop-blur-md rounded-full p-5 outline-none flex items-center gap-2"
-                title="Sin subtítulos detectables"
-              >
-                <Subtitles className="w-6 h-6" />
-                <span className="text-sm font-semibold uppercase tracking-wider hidden md:inline">
-                  CC
-                </span>
-              </button>
-            ) : null}
-            <div className="text-sm text-neutral-400 ml-2 hidden lg:block">
-              ← → saltar 10s · Espacio play/pausa · Esc volver
-            </div>
+            {type === "live" && channels.length > 1 ? (
+              <>
+                <button
+                  onClick={() => goChannel(-1)}
+                  data-testid="player-prev-channel"
+                  className="focus-tv bg-black/60 backdrop-blur-md rounded-full p-5 outline-none flex items-center gap-2"
+                  title="Canal anterior"
+                >
+                  <ChevronLeft className="w-6 h-6" />
+                  <span className="text-sm font-semibold uppercase tracking-wider hidden md:inline">
+                    Anterior
+                  </span>
+                </button>
+                <button
+                  onClick={() => goChannel(1)}
+                  data-testid="player-next-channel"
+                  className="focus-tv bg-[#FFB800] text-black rounded-full p-5 outline-none flex items-center gap-2"
+                  title="Canal siguiente"
+                >
+                  <span className="text-sm font-bold uppercase tracking-wider hidden md:inline">
+                    Siguiente
+                  </span>
+                  <ChevronRight className="w-6 h-6" />
+                </button>
+                <button
+                  onClick={toggleMute}
+                  data-testid="player-mute"
+                  className="focus-tv bg-black/60 backdrop-blur-md rounded-full p-5 outline-none"
+                >
+                  {muted ? <VolumeX className="w-6 h-6" /> : <Volume2 className="w-6 h-6" />}
+                </button>
+                <div className="text-sm text-neutral-400 ml-2 hidden lg:block">
+                  ← → cambiar canal · M silenciar · Esc volver
+                </div>
+              </>
+            ) : (
+              <>
+                <button
+                  onClick={togglePlay}
+                  data-testid="player-playpause"
+                  className="focus-tv bg-[#FFB800] text-black rounded-full p-5 outline-none"
+                >
+                  {playing ? <Pause className="w-7 h-7 fill-black" /> : <Play className="w-7 h-7 fill-black" />}
+                </button>
+                <button
+                  onClick={toggleMute}
+                  data-testid="player-mute"
+                  className="focus-tv bg-black/60 backdrop-blur-md rounded-full p-5 outline-none"
+                >
+                  {muted ? <VolumeX className="w-6 h-6" /> : <Volume2 className="w-6 h-6" />}
+                </button>
+                {audioTracks.length >= 1 ? (
+                  <button
+                    onClick={() => setOpenMenu(openMenu === "audio" ? null : "audio")}
+                    data-testid="player-audio-btn"
+                    className={`focus-tv backdrop-blur-md rounded-full p-5 outline-none flex items-center gap-2 ${
+                      openMenu === "audio" ? "bg-[#FFB800] text-black" : "bg-black/60"
+                    }`}
+                  >
+                    <Languages className="w-6 h-6" />
+                    <span className="text-sm font-semibold uppercase tracking-wider hidden md:inline">
+                      Audio
+                    </span>
+                  </button>
+                ) : type !== "live" ? (
+                  <button
+                    onClick={() => {
+                      toast.info(
+                        "Este formato (MKV) no expone pistas de audio en navegadores web. Instala la app TV nativa (.wgt / .ipk) para tener selector de idiomas.",
+                        { duration: 6000 }
+                      );
+                      showControls();
+                    }}
+                    data-testid="player-audio-btn"
+                    className="focus-tv bg-black/40 text-neutral-500 backdrop-blur-md rounded-full p-5 outline-none flex items-center gap-2"
+                    title="Sin pistas de audio detectables"
+                  >
+                    <Languages className="w-6 h-6" />
+                    <span className="text-sm font-semibold uppercase tracking-wider hidden md:inline">
+                      Audio
+                    </span>
+                  </button>
+                ) : null}
+                {subTracks.length > 0 ? (
+                  <button
+                    onClick={() => setOpenMenu(openMenu === "subs" ? null : "subs")}
+                    data-testid="player-subs-btn"
+                    className={`focus-tv backdrop-blur-md rounded-full p-5 outline-none flex items-center gap-2 ${
+                      openMenu === "subs" ? "bg-[#FFB800] text-black" : "bg-black/60"
+                    }`}
+                  >
+                    <Subtitles className="w-6 h-6" />
+                    <span className="text-sm font-semibold uppercase tracking-wider hidden md:inline">
+                      CC {subIdx >= 0 ? "ON" : "OFF"}
+                    </span>
+                  </button>
+                ) : type !== "live" ? (
+                  <button
+                    onClick={() => {
+                      toast.info(
+                        "Este formato (MKV) no expone subtítulos en navegadores web. Instala la app TV nativa (.wgt / .ipk) para tener selector de subtítulos.",
+                        { duration: 6000 }
+                      );
+                      showControls();
+                    }}
+                    data-testid="player-subs-btn"
+                    className="focus-tv bg-black/40 text-neutral-500 backdrop-blur-md rounded-full p-5 outline-none flex items-center gap-2"
+                    title="Sin subtítulos detectables"
+                  >
+                    <Subtitles className="w-6 h-6" />
+                    <span className="text-sm font-semibold uppercase tracking-wider hidden md:inline">
+                      CC
+                    </span>
+                  </button>
+                ) : null}
+                <div className="text-sm text-neutral-400 ml-2 hidden lg:block">
+                  ← → saltar 10s · Espacio play/pausa · Esc volver
+                </div>
+              </>
+            )}
           </div>
         </div>
       </div>

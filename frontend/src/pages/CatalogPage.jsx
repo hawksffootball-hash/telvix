@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Loader2 } from "lucide-react";
+import { Loader2, Search as SearchIcon } from "lucide-react";
 import { api } from "../lib/api";
 import { useAuth } from "../context/AuthContext";
 import PosterCard, { LiveCard } from "../components/PosterCard";
@@ -12,6 +12,8 @@ export default function CatalogPage({ type }) {
   const [activeCat, setActiveCat] = useState("all");
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [sortBy, setSortBy] = useState("recent"); // 'recent' | 'alpha'
+  const [query, setQuery] = useState("");
   const navigate = useNavigate();
 
   const title = { live: "En Vivo", vod: "Películas", series: "Series" }[type];
@@ -49,10 +51,20 @@ export default function CatalogPage({ type }) {
     if (creds) load();
   }, [creds, type]);
 
+  const sortFn = (a, b) => {
+    if (sortBy === "alpha") return (a.name || "").localeCompare(b.name || "");
+    // recent (added desc)
+    return Number(b.added || 0) - Number(a.added || 0);
+  };
+
   const filtered = useMemo(() => {
-    if (activeCat === "all") return items;
-    return items.filter((it) => String(it.category_id) === String(activeCat));
-  }, [items, activeCat]);
+    let base = activeCat === "all" ? items : items.filter((it) => String(it.category_id) === String(activeCat));
+    if (query.trim()) {
+      const q = query.trim().toLowerCase();
+      base = items.filter((it) => (it.name || "").toLowerCase().includes(q));
+    }
+    return [...base].sort(sortFn);
+  }, [items, activeCat, query, sortBy]);
 
   // Items agrupados por categoría (estilo Netflix) — una fila por categoría
   const itemsByCategory = useMemo(() => {
@@ -67,10 +79,10 @@ export default function CatalogPage({ type }) {
       .map((c) => ({
         id: String(c.category_id),
         name: c.category_name,
-        items: map.get(String(c.category_id)) || [],
+        items: (map.get(String(c.category_id)) || []).slice().sort(sortFn),
       }))
       .filter((c) => c.items.length > 0);
-  }, [items, categories, type]);
+  }, [items, categories, type, sortBy]);
 
   // Últimos 50 agregados (ordenados por timestamp `added` descendente)
   const latest = useMemo(() => {
@@ -81,13 +93,19 @@ export default function CatalogPage({ type }) {
       .slice(0, 50);
   }, [items, type]);
 
-  const openItem = (it, idx) => {
+  const openItem = (it, idx, listForLive) => {
     if (type === "series") {
       navigate(`/series/${it.series_id}`, { state: it });
     } else if (type === "vod") {
       navigate(`/vod/${it.stream_id}`, { state: it });
     } else {
-      if (creds.mode === "xtream") navigate(`/player/live/${it.stream_id}`, { state: it });
+      // live
+      const channels = listForLive || filtered;
+      const channelIndex = channels.findIndex((c) => String(c.stream_id) === String(it.stream_id));
+      if (creds.mode === "xtream")
+        navigate(`/player/live/${it.stream_id}`, {
+          state: { ...it, channels, channelIndex: channelIndex >= 0 ? channelIndex : idx },
+        });
       else navigate(`/player/m3u/${idx}`, { state: it });
     }
   };
@@ -119,11 +137,50 @@ export default function CatalogPage({ type }) {
 
       {/* Contenido principal */}
       <div className="flex-1 p-8 md:p-12 min-w-0">
-        <h1 className="font-display text-5xl md:text-6xl font-black tracking-tighter mb-8">
-          {activeCat === "all"
-            ? title
-            : (categories.find((c) => String(c.category_id) === String(activeCat))?.category_name || title)}
-        </h1>
+        <div className="flex flex-wrap items-end justify-between gap-6 mb-8">
+          <h1 className="font-display text-5xl md:text-6xl font-black tracking-tighter">
+            {query.trim()
+              ? `Buscar: "${query.trim()}"`
+              : activeCat === "all"
+                ? title
+                : (categories.find((c) => String(c.category_id) === String(activeCat))?.category_name || title)}
+          </h1>
+
+          <div className="flex flex-wrap items-center gap-3">
+            <div className="relative">
+              <SearchIcon className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-neutral-500" />
+              <input
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                placeholder={`Buscar en ${type === "live" ? "canales" : type === "vod" ? "películas" : "series"}…`}
+                data-testid="catalog-search"
+                className="focus-tv bg-[#111] border-2 border-neutral-800 rounded-xl pl-11 pr-4 py-3 text-base w-72 focus:border-[#FFB800] outline-none transition-colors"
+              />
+            </div>
+            {type !== "live" && (
+              <div className="flex bg-[#111] border-2 border-neutral-800 rounded-xl p-1" role="tablist">
+                <button
+                  onClick={() => setSortBy("recent")}
+                  data-testid="sort-recent"
+                  className={`focus-tv px-4 py-2 rounded-lg text-sm font-semibold uppercase tracking-wider transition-colors outline-none ${
+                    sortBy === "recent" ? "bg-[#FFB800] text-black" : "text-neutral-400 hover:text-white"
+                  }`}
+                >
+                  Recientes
+                </button>
+                <button
+                  onClick={() => setSortBy("alpha")}
+                  data-testid="sort-alpha"
+                  className={`focus-tv px-4 py-2 rounded-lg text-sm font-semibold uppercase tracking-wider transition-colors outline-none ${
+                    sortBy === "alpha" ? "bg-[#FFB800] text-black" : "text-neutral-400 hover:text-white"
+                  }`}
+                >
+                  A-Z
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
 
         {loading ? (
           <div className="flex items-center gap-3 text-neutral-400 text-xl">
@@ -133,7 +190,7 @@ export default function CatalogPage({ type }) {
           <div className="text-neutral-500 text-xl py-20 text-center">No hay contenido disponible</div>
         ) : (
           <>
-            {type !== "live" && activeCat === "all" ? (
+            {type !== "live" && activeCat === "all" && !query.trim() ? (
               // Vista estilo Netflix: una fila por categoría
               <div className="space-y-12">
                 {latest.length > 0 && (

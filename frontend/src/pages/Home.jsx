@@ -153,7 +153,9 @@ export default function Home() {
                 image={it.stream_icon || it.logo}
                 onActivate={() =>
                   creds.mode === "xtream"
-                    ? navigate(`/player/live/${it.stream_id}`, { state: it })
+                    ? navigate(`/player/live/${it.stream_id}`, {
+                        state: { ...it, channels: live, channelIndex: idx },
+                      })
                     : navigate(`/player/m3u/${idx}`, { state: it })
                 }
               />
