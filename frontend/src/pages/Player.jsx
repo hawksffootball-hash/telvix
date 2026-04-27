@@ -46,11 +46,10 @@ export default function Player() {
       if (type === "live") {
         url = buildXtreamUrl(creds, "live", id, "m3u8");
       } else if (type === "vod") {
-        const ext = state?.container_extension || "mp4";
-        url = buildXtreamUrl(creds, "vod", id, ext);
+        // Probar HLS primero (expone audio/subtitle tracks); fallback a MP4 si falla
+        url = buildXtreamUrl(creds, "vod", id, "m3u8");
       } else if (type === "series") {
-        const ext = state?._container || "mp4";
-        url = buildXtreamUrl(creds, "series", id, ext);
+        url = buildXtreamUrl(creds, "series", id, "m3u8");
       }
     }
     if (!url) {

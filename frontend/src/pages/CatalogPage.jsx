@@ -54,6 +54,24 @@ export default function CatalogPage({ type }) {
     return items.filter((it) => String(it.category_id) === String(activeCat));
   }, [items, activeCat]);
 
+  // Items agrupados por categoría (estilo Netflix) — una fila por categoría
+  const itemsByCategory = useMemo(() => {
+    if (type === "live") return [];
+    const map = new Map();
+    items.forEach((it) => {
+      const cid = String(it.category_id || "uncat");
+      if (!map.has(cid)) map.set(cid, []);
+      map.get(cid).push(it);
+    });
+    return categories
+      .map((c) => ({
+        id: String(c.category_id),
+        name: c.category_name,
+        items: map.get(String(c.category_id)) || [],
+      }))
+      .filter((c) => c.items.length > 0);
+  }, [items, categories, type]);
+
   // Últimos 50 agregados (ordenados por timestamp `added` descendente)
   const latest = useMemo(() => {
     if (type === "live") return [];
@@ -104,40 +122,59 @@ export default function CatalogPage({ type }) {
         <div className="text-neutral-500 text-xl py-20 text-center">No hay contenido disponible</div>
       ) : (
         <>
-          {type !== "live" && latest.length > 0 && activeCat === "all" && (
-            <div className="mb-12">
-              <Row title="Últimos 50 agregados" testid="row-latest">
-                {latest.map((it, idx) => (
-                  <PosterCard
-                    key={`latest-${it.stream_id || it.series_id}`}
-                    testid={`latest-${type}-${idx}`}
-                    title={it.name}
-                    image={it.stream_icon || it.cover}
-                    meta={it.rating ? `★ ${it.rating}` : null}
-                    onActivate={() => openItem(it, idx)}
-                  />
-                ))}
-              </Row>
+          {type !== "live" && activeCat === "all" ? (
+            // Vista estilo Netflix: una fila por categoría
+            <div className="space-y-12">
+              {latest.length > 0 && (
+                <Row title="Últimos 50 agregados" testid="row-latest">
+                  {latest.map((it, idx) => (
+                    <PosterCard
+                      key={`latest-${it.stream_id || it.series_id}`}
+                      testid={`latest-${type}-${idx}`}
+                      title={it.name}
+                      image={it.stream_icon || it.cover}
+                      meta={it.rating ? `★ ${it.rating}` : null}
+                      onActivate={() => openItem(it, idx)}
+                    />
+                  ))}
+                </Row>
+              )}
+              {itemsByCategory.map((cat) => (
+                <Row key={`cat-row-${cat.id}`} title={cat.name} testid={`row-cat-${cat.id}`}>
+                  {cat.items.slice(0, 40).map((it, idx) => (
+                    <PosterCard
+                      key={`${cat.id}-${it.stream_id || it.series_id}-${idx}`}
+                      testid={`${type}-cat-${cat.id}-${idx}`}
+                      title={it.name}
+                      image={it.stream_icon || it.cover}
+                      meta={it.rating ? `★ ${it.rating}` : null}
+                      onActivate={() => openItem(it, idx)}
+                    />
+                  ))}
+                </Row>
+              ))}
+            </div>
+          ) : (
+            // Vista grid (live siempre, o cuando hay categoría seleccionada)
+            <div
+              className={
+                type === "live"
+                  ? "grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-6"
+                  : "grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-7 gap-6"
+              }
+            >
+              {filtered.slice(0, 300).map((it, idx) => {
+                const common = {
+                  key: (it.stream_id || it.series_id || it._idx || idx) + "-" + idx,
+                  title: it.name,
+                  image: it.stream_icon || it.cover || it.logo,
+                  onActivate: () => openItem(it, idx),
+                  testid: `${type}-item-${idx}`,
+                };
+                return type === "live" ? <LiveCard {...common} /> : <PosterCard {...common} />;
+              })}
             </div>
           )}
-          <div
-            className={
-              type === "live"
-                ? "grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-6"
-                : "grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-7 gap-6"
-            }
-          >
-          {filtered.slice(0, 300).map((it, idx) => {
-            const common = {
-              key: (it.stream_id || it.series_id || it._idx || idx) + "-" + idx,
-              title: it.name,
-              image: it.stream_icon || it.cover || it.logo,
-              onActivate: () => openItem(it, idx),
-              testid: `${type}-item-${idx}`,
-            };
-            return type === "live" ? <LiveCard {...common} /> : <PosterCard {...common} />;
-          })}
-        </div>
         </>
       )}
     </div>
