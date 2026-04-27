@@ -1,0 +1,108 @@
+{
+  "theme": "Dark",
+  "archetype": "Swiss Dark Cinematic (Archetype 5 + 4 hybrid for TV)",
+  "language": "es",
+  "typography": {
+    "font_family": {
+      "headings": "Cabinet Grotesk, sans-serif",
+      "body": "Outfit, sans-serif"
+    },
+    "scale": {
+      "h1": "text-5xl md:text-6xl lg:text-7xl font-black tracking-tighter",
+      "h2": "text-4xl md:text-5xl lg:text-6xl font-bold tracking-tight",
+      "h3": "text-2xl md:text-3xl font-semibold tracking-tight",
+      "h4": "text-xl md:text-2xl font-medium",
+      "body": "text-xl md:text-2xl leading-relaxed",
+      "small": "text-lg md:text-xl text-neutral-400 uppercase tracking-[0.15em]"
+    },
+    "rules": [
+      "Avoid 'Inter' completely. Use Cabinet Grotesk for dramatic, premium headings and Outfit for highly legible body text on TVs.",
+      "Text must be massively upscaled compared to web apps for 10ft TV UI readability. The minimum functional text size is text-lg.",
+      "Headings must use tight letter spacing (tracking-tighter) for a cinematic poster feel."
+    ]
+  },
+  "colors": {
+    "background": {
+      "base": "#050505",
+      "surface": "#111111",
+      "surface_elevated": "#1A1A1A",
+      "glass": "bg-black/60 backdrop-blur-2xl"
+    },
+    "text": {
+      "primary": "#FFFFFF",
+      "secondary": "#A3A3A3",
+      "disabled": "#525252"
+    },
+    "accent": {
+      "primary": "#FFB800",
+      "hover": "#FFD147",
+      "focus_ring": "#FFB800"
+    },
+    "states": {
+      "error": "#FF3366",
+      "success": "#00E599"
+    }
+  },
+  "layout_and_spacing": {
+    "philosophy": "10ft UI (TV-First). Oversized spacing, predictable grid movements, zero clutter.",
+    "spacing_scale": {
+      "container_padding": "p-8 md:p-12 lg:p-16",
+      "section_gap": "gap-12 md:gap-16 lg:gap-24",
+      "grid_gap": "gap-6 md:gap-8",
+      "element_padding": "px-6 py-4 md:px-8 md:py-5"
+    },
+    "grid_system": {
+      "movies_series": "grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-8",
+      "live_tv": "grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4",
+      "sidebar_width": "w-20 focus-within:w-72 transition-all duration-300 ease-out"
+    }
+  },
+  "components": {
+    "focus_state": {
+      "description": "CRITICAL for TV navigation via D-pad. The user must always know exactly where they are.",
+      "classes": "focus:outline-none focus:ring-4 focus:ring-[#FFB800] focus:ring-offset-4 focus:ring-offset-[#050505] focus:scale-105 transition-all duration-200 z-10 relative"
+    },
+    "buttons": {
+      "primary": "bg-[#FFB800] text-black font-bold rounded-lg px-8 py-5 text-xl lg:text-2xl hover:bg-[#FFD147] focus:ring-4 focus:ring-white focus:scale-105 transition-all",
+      "secondary": "bg-[#111111] text-white border-2 border-neutral-800 rounded-lg px-8 py-5 text-xl lg:text-2xl hover:border-neutral-600 focus:border-[#FFB800] focus:bg-[#1A1A1A] focus:scale-105 transition-all"
+    },
+    "cards": {
+      "poster": "aspect-[2/3] rounded-xl overflow-hidden bg-neutral-900 border-4 border-transparent transition-all duration-200",
+      "live_channel": "aspect-video rounded-xl bg-neutral-900 flex flex-col items-center justify-center p-6 border-4 border-transparent transition-all duration-200",
+      "interaction": "hover:scale-105 focus:scale-110 focus:border-[#FFB800] focus:shadow-[0_0_40px_rgba(255,184,0,0.4)] focus:z-20 cursor-pointer outline-none"
+    },
+    "inputs": {
+      "text": "bg-[#111111] border-2 border-neutral-800 text-white rounded-lg px-6 py-5 text-xl w-full focus:outline-none focus:border-[#FFB800] focus:bg-[#1A1A1A] transition-colors placeholder:text-neutral-600"
+    }
+  },
+  "visual_enhancers": {
+    "glassmorphism": "Used selectively for the video player overlay and floating sidebar. Use 'bg-black/60 backdrop-blur-2xl border-white/10' for high-end optical clarity.",
+    "shadows": "Deep ambient shadows on focused elements: 'shadow-[0_0_40px_rgba(255,184,0,0.15)]'.",
+    "borders": "No borders on idle items. Sharp 4px borders appear strictly on focus/hover to guide the eye."
+  },
+  "media": {
+    "image_urls": [
+      {
+        "url": "https://images.unsplash.com/photo-1771873679947-dd2b426cfd77?crop=entropy&cs=srgb&fm=jpg&ixid=M3w3NTY2NjZ8MHwxfHNlYXJjaHwxfHxjaW5lbWF0aWMlMjBkYXJrJTIwdGV4dHVyZSUyMGJhY2tncm91bmR8ZW58MHx8fHwxNzc3MzI0MDQyfDA&ixlib=rb-4.1.0&q=85",
+        "category": "login_background",
+        "description": "Abstract grid pattern with colorful blurred lights behind. Used as the main background for the Xtream/M3U login screen."
+      },
+      {
+        "url": "https://images.pexels.com/photos/9665193/pexels-photo-9665193.jpeg?auto=compress&cs=tinysrgb&dpr=2&h=650&w=940",
+        "category": "hero_overlay_texture",
+        "description": "Mystical black texture with floating dust. Used as a subtle blend-mode overlay on the dashboard hero section to add cinematic depth."
+      }
+    ]
+  },
+  "instructions_to_main_agent": [
+    "Design specifically for Smart TVs (10ft UI). Desktop is a secondary use case. Ensure everything is navigable via keyboard arrows (simulating a TV D-pad).",
+    "EVERY interactable element MUST have the focus state classes defined in the guidelines (scale + gold ring). This is the absolute most critical feature of a TV app.",
+    "Use 'es' (Spanish) for all interface text: 'Películas', 'Series', 'En Vivo', 'Favoritos', 'Iniciar Sesión', 'Usuario', 'Contraseña', 'URL del Servidor'.",
+    "DO NOT use generic purple/violet gradients. Strictly follow the Deep Black (#050505) + Electric Amber (#FFB800) palette.",
+    "Import 'Cabinet Grotesk' for headings and 'Outfit' for body text. Apply them heavily.",
+    "Add 'data-testid' attributes to all inputs, buttons, and media cards (e.g., data-testid='login-button').",
+    "Implement horizontal scrolling for media rows using CSS (flex-row overflow-x-auto snap-x scroll-smooth) and ensure arrow keys scroll the focused item into view.",
+    "For the Video Player, implement a full-screen overlay with large controls that appear on activity and auto-hide on inactivity.",
+    "Ensure input fields are clearly distinguishable and huge. Use the inputs.text classes provided."
+  ]
+}
