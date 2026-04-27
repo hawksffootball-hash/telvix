@@ -5,48 +5,56 @@
 
 ## Architecture
 - **Frontend**: React 19 + React Router 7 + Tailwind + shadcn/ui + HLS.js
-- **Backend**: FastAPI + Motor (MongoDB) + httpx (Xtream proxy)
-- **Storage**: MongoDB (`favorites` collection, keyed by client_id UUID in localStorage)
-- **Theme**: Swiss Dark Cinematic — #050505 background, #FFB800 amber accent, Cabinet Grotesk + Outfit fonts
+- **Backend**: FastAPI + Motor (MongoDB) + httpx (Xtream proxy con streaming)
+- **Storage**: MongoDB (`favorites`, `history`) keyed por `client_id` (UUID en localStorage)
+- **Theme**: Swiss Dark Cinematic — #050505 background, #FFB800 amber accent, Cabinet Grotesk + Outfit
 
-## User Personas
-- Dueños de suscripciones IPTV Xtream Codes que quieren ver en Smart TV / navegador
-- Usuarios con listas M3U públicas o personales
+## Validado End-to-End (2026-02)
+- ✅ Login Xtream real: `http://playgo.sbs:25461` user/pass `jevus` → auth=1
+- ✅ Reproducción HLS en vivo: Imagen TV HD a 1280x720, sin errores de consola
+- ✅ Proxy de streams: redirige redirects 302, reescribe segmentos m3u8 a rutas relativas, streaming sin buffer
+- ✅ 25/25 tests pytest
 
-## Core Requirements (static)
-- Login por Xtream (URL, usuario, contraseña) o URL M3U
-- Catálogos: En Vivo, Películas, Series, Favoritos, Buscar
-- Reproductor HLS con overlay, soporte D-pad / teclas de flecha
-- Multi-plataforma: navegador de Smart TV (Tizen/webOS) y desktop
+## Implementado
+### Backend
+- `/api/xtream/login`, `/api/xtream/categories`, `/api/xtream/streams`
+- `/api/xtream/vod-info`, `/api/xtream/series-info`, `/api/xtream/epg`
+- `/api/m3u/parse` (parser de M3U con categorías + entradas)
+- `/api/proxy/stream` con doble branch: m3u8 (rewrite + redirects) y binarios (StreamingResponse + Range)
+- `/api/favorites` CRUD (upsert idempotente por client_id+type+stream_id)
+- `/api/history` CRUD (idem, ordenado por updated_at desc)
 
-## Implemented (2026-02)
-- ✅ Backend Xtream: login, categories, streams, vod-info, series-info, epg
-- ✅ Backend M3U parser (categorías + entradas con logo/grupo)
-- ✅ Backend proxy /api/proxy/stream (reescribe m3u8 y recursa segmentos para HTTPS↔HTTP)
-- ✅ Backend favoritos (CRUD con upsert, sin leakage de _id)
-- ✅ Frontend: login con tabs Xtream/M3U, Home hero + rows, catálogos con filtros de categoría
-- ✅ SeriesDetail con temporadas/episodios, Favoritos, Search (en catálogo Xtream)
-- ✅ Player HLS.js con controles overlay, favoritos, EPG live, controles por teclas
-- ✅ Shell/sidebar con navegación D-pad, focus ring amber
-- ✅ Testing backend: 15/15 pytest pasados
+### Frontend
+- Login con tabs Xtream/M3U + validación
+- Home con hero + filas: **Continuar viendo** (con barra de progreso amber), En Vivo, Películas, Series
+- Catálogos `/live`, `/movies`, `/series` con filtros de categoría
+- Detalle VOD `/vod/:id` con sinopsis, año, género, reparto, director, duración
+- Detalle Series `/series/:id` con temporadas/episodios
+- Player HLS.js con:
+  - Auto-resume desde última posición (toast "Reanudado desde X:XX")
+  - Tracking de progreso cada 10s
+  - Overlay con play/pause, mute, EPG live, favorito
+  - Teclas D-pad: ←→ saltar 10s, Espacio play/pausa, Esc volver, M mute
+- Favoritos, Búsqueda
+- Sidebar D-pad con focus ring amber, fuentes Cabinet Grotesk + Outfit
 
-## Prioritized Backlog
+### Empaquetado nativo
+- `/app/packaging/tizen/` — config.xml + index.html (wrapper iframe) para Samsung Tizen `.wgt`
+- `/app/packaging/webos/` — appinfo.json + index.html para LG webOS `.ipk`
+- `/app/packaging/README.md` — instrucciones completas para empaquetar y desplegar en TVs
+
+## Backlog
 ### P1
-- StreamingResponse en proxy para VOD grandes (evitar buffer full en memoria)
 - Búsqueda en modo M3U (actualmente solo Xtream)
-- Vista detallada de VOD antes de reproducir (poster/sinopsis)
-- Progreso de continuación (last-watched) en VOD/series
+- Player audio/subtítulos selector
+- Detalle de canal en vivo (vista previa antes de entrar a fullscreen)
 
 ### P2
-- Multi-perfil (varios usuarios locales)
-- Control parental / PIN por categoría
-- Empaquetado Tizen (.wgt) y webOS (.ipk) con guías
+- Multi-perfil (varios usuarios locales en mismo TV)
+- Control parental con PIN
+- EPG completa (rejilla horaria) para Live TV
 
 ### P3
-- EPG completa (guía rejilla para Live TV)
-- Picture-in-picture
-- Selector de pista de audio/subtítulos
-
-## Next Tasks
-1. Esperar feedback del usuario con credenciales Xtream reales para validar UI completa
-2. Opcional: ofrecer detalles VOD (página intermedia con sinopsis antes de reproducir)
+- PiP (picture-in-picture)
+- Modo offline (cache de últimos canales/listas)
+- Voice search via webOS/Tizen TV remote mic
