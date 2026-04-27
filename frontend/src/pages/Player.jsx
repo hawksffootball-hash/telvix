@@ -438,7 +438,7 @@ export default function Player() {
             >
               {muted ? <VolumeX className="w-6 h-6" /> : <Volume2 className="w-6 h-6" />}
             </button>
-            {audioTracks.length > 1 && (
+            {audioTracks.length >= 1 ? (
               <button
                 onClick={() => setOpenMenu(openMenu === "audio" ? null : "audio")}
                 data-testid="player-audio-btn"
@@ -451,8 +451,26 @@ export default function Player() {
                   Audio
                 </span>
               </button>
-            )}
-            {(subTracks.length > 0) && (
+            ) : type !== "live" ? (
+              <button
+                onClick={() => {
+                  toast.info(
+                    "Este formato (MKV) no expone pistas de audio en navegadores web. Instala la app TV nativa (.wgt / .ipk) para tener selector de idiomas.",
+                    { duration: 6000 }
+                  );
+                  showControls();
+                }}
+                data-testid="player-audio-btn"
+                className="focus-tv bg-black/40 text-neutral-500 backdrop-blur-md rounded-full p-5 outline-none flex items-center gap-2"
+                title="Sin pistas de audio detectables"
+              >
+                <Languages className="w-6 h-6" />
+                <span className="text-sm font-semibold uppercase tracking-wider hidden md:inline">
+                  Audio
+                </span>
+              </button>
+            ) : null}
+            {subTracks.length > 0 ? (
               <button
                 onClick={() => setOpenMenu(openMenu === "subs" ? null : "subs")}
                 data-testid="player-subs-btn"
@@ -465,7 +483,25 @@ export default function Player() {
                   CC {subIdx >= 0 ? "ON" : "OFF"}
                 </span>
               </button>
-            )}
+            ) : type !== "live" ? (
+              <button
+                onClick={() => {
+                  toast.info(
+                    "Este formato (MKV) no expone subtítulos en navegadores web. Instala la app TV nativa (.wgt / .ipk) para tener selector de subtítulos.",
+                    { duration: 6000 }
+                  );
+                  showControls();
+                }}
+                data-testid="player-subs-btn"
+                className="focus-tv bg-black/40 text-neutral-500 backdrop-blur-md rounded-full p-5 outline-none flex items-center gap-2"
+                title="Sin subtítulos detectables"
+              >
+                <Subtitles className="w-6 h-6" />
+                <span className="text-sm font-semibold uppercase tracking-wider hidden md:inline">
+                  CC
+                </span>
+              </button>
+            ) : null}
             <div className="text-sm text-neutral-400 ml-2 hidden lg:block">
               ← → saltar 10s · Espacio play/pausa · Esc volver
             </div>

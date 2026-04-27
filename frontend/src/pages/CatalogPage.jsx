@@ -93,76 +93,87 @@ export default function CatalogPage({ type }) {
   };
 
   return (
-    <div className="p-8 md:p-12" data-testid={`catalog-${type}`}>
-      <h1 className="font-display text-5xl md:text-6xl font-black tracking-tighter mb-8">
-        {title}
-      </h1>
-
-      <div className="flex gap-3 overflow-x-auto scroll-tv pb-4 mb-8">
-        <CatBtn active={activeCat === "all"} onClick={() => setActiveCat("all")} testid="cat-all">
-          Todas
-        </CatBtn>
-        {categories.map((c) => (
-          <CatBtn
-            key={c.category_id}
-            active={String(activeCat) === String(c.category_id)}
-            onClick={() => setActiveCat(c.category_id)}
-            testid={`cat-${c.category_id}`}
-          >
-            {c.category_name}
-          </CatBtn>
-        ))}
-      </div>
-
-      {loading ? (
-        <div className="flex items-center gap-3 text-neutral-400 text-xl">
-          <Loader2 className="w-6 h-6 animate-spin" /> Cargando…
-        </div>
-      ) : filtered.length === 0 ? (
-        <div className="text-neutral-500 text-xl py-20 text-center">No hay contenido disponible</div>
-      ) : (
-        <>
-          {type !== "live" && activeCat === "all" ? (
-            // Vista estilo Netflix: una fila por categoría
-            <div className="space-y-12">
-              {latest.length > 0 && (
-                <Row title="Últimos 50 agregados" testid="row-latest">
-                  {latest.map((it, idx) => (
-                    <PosterCard
-                      key={`latest-${it.stream_id || it.series_id}`}
-                      testid={`latest-${type}-${idx}`}
-                      title={it.name}
-                      image={it.stream_icon || it.cover}
-                      meta={it.rating ? `★ ${it.rating}` : null}
-                      onActivate={() => openItem(it, idx)}
-                    />
-                  ))}
-                </Row>
-              )}
-              {itemsByCategory.map((cat) => (
-                <Row key={`cat-row-${cat.id}`} title={cat.name} testid={`row-cat-${cat.id}`}>
-                  {cat.items.slice(0, 40).map((it, idx) => (
-                    <PosterCard
-                      key={`${cat.id}-${it.stream_id || it.series_id}-${idx}`}
-                      testid={`${type}-cat-${cat.id}-${idx}`}
-                      title={it.name}
-                      image={it.stream_icon || it.cover}
-                      meta={it.rating ? `★ ${it.rating}` : null}
-                      onActivate={() => openItem(it, idx)}
-                    />
-                  ))}
-                </Row>
-              ))}
-            </div>
-          ) : (
-            // Vista grid (live siempre, o cuando hay categoría seleccionada)
-            <div
-              className={
-                type === "live"
-                  ? "grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-6"
-                  : "grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-7 gap-6"
-              }
+    <div className="flex min-h-screen" data-testid={`catalog-${type}`}>
+      {/* Sidebar vertical de categorías (lado izquierdo) */}
+      <aside
+        className="w-72 shrink-0 border-r border-neutral-900 bg-[#0a0a0a]/80 sticky top-0 self-start max-h-screen overflow-y-auto scroll-tv py-8 px-3"
+        data-testid="cat-sidebar"
+      >
+        <h2 className="font-display text-2xl font-bold tracking-tighter px-4 mb-4">{title}</h2>
+        <div className="space-y-1.5">
+          <CatItem active={activeCat === "all"} onClick={() => setActiveCat("all")} testid="cat-all">
+            Todas
+          </CatItem>
+          {categories.map((c) => (
+            <CatItem
+              key={c.category_id}
+              active={String(activeCat) === String(c.category_id)}
+              onClick={() => setActiveCat(c.category_id)}
+              testid={`cat-${c.category_id}`}
             >
+              {c.category_name}
+            </CatItem>
+          ))}
+        </div>
+      </aside>
+
+      {/* Contenido principal */}
+      <div className="flex-1 p-8 md:p-12 min-w-0">
+        <h1 className="font-display text-5xl md:text-6xl font-black tracking-tighter mb-8">
+          {activeCat === "all"
+            ? title
+            : (categories.find((c) => String(c.category_id) === String(activeCat))?.category_name || title)}
+        </h1>
+
+        {loading ? (
+          <div className="flex items-center gap-3 text-neutral-400 text-xl">
+            <Loader2 className="w-6 h-6 animate-spin" /> Cargando…
+          </div>
+        ) : filtered.length === 0 ? (
+          <div className="text-neutral-500 text-xl py-20 text-center">No hay contenido disponible</div>
+        ) : (
+          <>
+            {type !== "live" && activeCat === "all" ? (
+              // Vista estilo Netflix: una fila por categoría
+              <div className="space-y-12">
+                {latest.length > 0 && (
+                  <Row title="Últimos 50 agregados" testid="row-latest">
+                    {latest.map((it, idx) => (
+                      <PosterCard
+                        key={`latest-${it.stream_id || it.series_id}`}
+                        testid={`latest-${type}-${idx}`}
+                        title={it.name}
+                        image={it.stream_icon || it.cover}
+                        meta={it.rating ? `★ ${it.rating}` : null}
+                        onActivate={() => openItem(it, idx)}
+                      />
+                    ))}
+                  </Row>
+                )}
+                {itemsByCategory.map((cat) => (
+                  <Row key={`cat-row-${cat.id}`} title={cat.name} testid={`row-cat-${cat.id}`}>
+                    {cat.items.slice(0, 40).map((it, idx) => (
+                      <PosterCard
+                        key={`${cat.id}-${it.stream_id || it.series_id}-${idx}`}
+                        testid={`${type}-cat-${cat.id}-${idx}`}
+                        title={it.name}
+                        image={it.stream_icon || it.cover}
+                        meta={it.rating ? `★ ${it.rating}` : null}
+                        onActivate={() => openItem(it, idx)}
+                      />
+                    ))}
+                  </Row>
+                ))}
+              </div>
+            ) : (
+              // Vista grid (live siempre, o cuando hay categoría seleccionada)
+              <div
+                className={
+                  type === "live"
+                    ? "grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-6"
+                    : "grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-7 gap-6"
+                }
+              >
               {filtered.slice(0, 300).map((it, idx) => {
                 const common = {
                   key: (it.stream_id || it.series_id || it._idx || idx) + "-" + idx,
@@ -177,7 +188,24 @@ export default function CatalogPage({ type }) {
           )}
         </>
       )}
+      </div>
     </div>
+  );
+}
+
+function CatItem({ active, onClick, children, testid }) {
+  return (
+    <button
+      onClick={onClick}
+      data-testid={testid}
+      className={`focus-tv w-full text-left px-4 py-3 rounded-xl text-base md:text-lg font-medium transition-colors outline-none truncate ${
+        active
+          ? "bg-[#FFB800] text-black font-bold"
+          : "text-neutral-400 hover:text-white hover:bg-white/5"
+      }`}
+    >
+      {children}
+    </button>
   );
 }
 
