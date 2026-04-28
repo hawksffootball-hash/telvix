@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState, useCallback } from "react";
 import { useParams, useLocation, useNavigate } from "react-router-dom";
 import Hls from "hls.js";
 import { ArrowLeft, Loader2, Play, Pause, Volume2, VolumeX, Star, StarOff, Languages, Subtitles, ChevronLeft, ChevronRight } from "lucide-react";
-import { api, buildXtreamUrl, playableUrl } from "../lib/api";
+import { api, buildXtreamUrl, playableUrl, API } from "../lib/api";
 import { useAuth } from "../context/AuthContext";
 import { toast } from "sonner";
 
@@ -40,16 +40,21 @@ export default function Player() {
   // Build URL
   useEffect(() => {
     let url = null;
+    let useRemux = false;
     if (creds?.mode === "m3u" && type === "m3u") {
       url = state?.url || null;
     } else if (creds?.mode === "xtream") {
       if (type === "live") {
         url = buildXtreamUrl(creds, "live", id, "m3u8");
       } else if (type === "vod") {
-        // Probar HLS primero (expone audio/subtitle tracks); fallback a MP4 si falla
-        url = buildXtreamUrl(creds, "vod", id, "m3u8");
+        // Usar el container original del archivo (mkv/avi/mp4) y remuxear a fMP4
+        const ext = state?.container_extension || "mkv";
+        url = buildXtreamUrl(creds, "vod", id, ext);
+        useRemux = true;
       } else if (type === "series") {
-        url = buildXtreamUrl(creds, "series", id, "m3u8");
+        const ext = state?._container || state?.container_extension || "mkv";
+        url = buildXtreamUrl(creds, "series", id, ext);
+        useRemux = true;
       }
     }
     if (!url) {
@@ -57,7 +62,13 @@ export default function Player() {
       setLoading(false);
       return;
     }
-    setSrc(playableUrl(url));
+    // Para VOD/series pasamos por el remuxer ffmpeg → fMP4
+    // Para live usamos el proxy HLS normal (ya funciona bien)
+    if (useRemux) {
+      setSrc(`${API}/remux/mp4?u=${encodeURIComponent(url)}`);
+    } else {
+      setSrc(playableUrl(url));
+    }
     setTitle(state?.name || state?.title || "Reproduciendo");
   }, [creds, type, id, state]);
 

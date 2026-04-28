@@ -237,6 +237,55 @@ async def m3u_parse(q: M3UQuery):
 
 
 # ------------------- Stream Proxy -------------------
+@api_router.get("/remux/mp4")
+async def remux_to_mp4(u: str = Query(...)):
+    """
+    Remuxea un video (MKV/AVI/etc) a fMP4 fragmentado sin transcodificar
+    (solo -c copy), apto para <video> del navegador. Usa ffmpeg.
+    """
+    import asyncio
+    cmd = [
+        "ffmpeg",
+        "-loglevel", "error",
+        "-user_agent", "VLC/3.0.20 LibVLC/3.0.20",
+        "-i", u,
+        "-c:v", "copy",
+        "-c:a", "aac",           # algunos navegadores no soportan DTS/AC3/etc → forzar AAC
+        "-b:a", "192k",
+        "-movflags", "frag_keyframe+empty_moov+default_base_moof",
+        "-f", "mp4",
+        "pipe:1",
+    ]
+    proc = await asyncio.create_subprocess_exec(
+        *cmd,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.DEVNULL,
+    )
+
+    async def body_iter():
+        try:
+            while True:
+                chunk = await proc.stdout.read(64 * 1024)
+                if not chunk:
+                    break
+                yield chunk
+        finally:
+            try:
+                proc.kill()
+            except Exception:
+                pass
+            try:
+                await proc.wait()
+            except Exception:
+                pass
+
+    return StreamingResponse(
+        body_iter(),
+        media_type="video/mp4",
+        headers={"Access-Control-Allow-Origin": "*", "Cache-Control": "no-store"},
+    )
+
+
 @api_router.get("/proxy/stream")
 async def proxy_stream(request: Request, u: str = Query(...)):
     """Proxy HLS/MP4. Manifests get rewritten so segments go through us.
