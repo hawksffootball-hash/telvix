@@ -2,7 +2,13 @@ from fastapi import FastAPI, APIRouter, HTTPException, Request, Query
 from fastapi.responses import StreamingResponse, Response
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
-from motor.motor_asyncio import AsyncIOMotorClient
+from sqlalchemy import (
+    Column, String, Float, DateTime, JSON, Text, UniqueConstraint, select, delete,
+)
+from sqlalchemy.orm import declarative_base
+from sqlalchemy.dialects.mysql import insert as mysql_insert
+from sqlalchemy.dialects.sqlite import insert as sqlite_insert
+from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession
 import os
 import logging
 import re
@@ -16,16 +22,73 @@ import httpx
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
 
-# MongoDB
-mongo_url = os.environ['MONGO_URL']
-client = AsyncIOMotorClient(mongo_url)
-db = client[os.environ['DB_NAME']]
+# Base de datos: usa DATABASE_URL si está definido (MySQL/MariaDB),
+# permite fallback a MongoDB MONGO_URL si la app se despliega con Mongo.
+DATABASE_URL = os.environ.get(
+    "DATABASE_URL",
+    f"sqlite+aiosqlite:///{ROOT_DIR / 'televix.db'}",
+)
+IS_SQLITE = DATABASE_URL.startswith("sqlite")
+
+
+def _upsert(table, payload, update_keys, conflict_cols):
+    """INSERT con upsert compatible MySQL/MariaDB y SQLite."""
+    if IS_SQLITE:
+        stmt = sqlite_insert(table).values(**payload)
+        return stmt.on_conflict_do_update(
+            index_elements=conflict_cols,
+            set_={k: stmt.excluded[k] for k in update_keys},
+        )
+    stmt = mysql_insert(table).values(**payload)
+    return stmt.on_duplicate_key_update(**{k: stmt.inserted[k] for k in update_keys})
+
+Base = declarative_base()
+
+
+class FavoriteRow(Base):
+    __tablename__ = "favorites"
+    id = Column(String(36), primary_key=True)
+    client_id = Column(String(64), nullable=False, index=True)
+    type = Column(String(16), nullable=False)
+    stream_id = Column(String(64), nullable=False)
+    name = Column(String(512), nullable=False)
+    icon = Column(Text)
+    extra = Column(JSON)
+    created_at = Column(DateTime, nullable=False)
+    __table_args__ = (UniqueConstraint("client_id", "type", "stream_id", name="uq_fav"),)
+
+
+class HistoryRow(Base):
+    __tablename__ = "history"
+    id = Column(String(36), primary_key=True)
+    client_id = Column(String(64), nullable=False, index=True)
+    type = Column(String(16), nullable=False)
+    stream_id = Column(String(64), nullable=False)
+    name = Column(String(512), nullable=False)
+    icon = Column(Text)
+    position = Column(Float, default=0.0)
+    duration = Column(Float, default=0.0)
+    extra = Column(JSON)
+    updated_at = Column(DateTime, nullable=False, index=True)
+    __table_args__ = (UniqueConstraint("client_id", "type", "stream_id", name="uq_hist"),)
+
+
+engine = create_async_engine(DATABASE_URL, pool_pre_ping=True, pool_recycle=1800)
+SessionLocal = async_sessionmaker(engine, expire_on_commit=False, class_=AsyncSession)
+
 
 app = FastAPI(title="TV Stream API")
 api_router = APIRouter(prefix="/api")
 
 # Shared HTTP client
 http_client = httpx.AsyncClient(timeout=httpx.Timeout(30.0, connect=10.0), follow_redirects=True)
+
+
+@app.on_event("startup")
+async def _init_db():
+    """Crea las tablas si no existen al arrancar."""
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
 
 
 # ------------------- Models -------------------
@@ -350,28 +413,55 @@ async def proxy_stream(request: Request, u: str = Query(...)):
 @api_router.post("/favorites", response_model=FavoriteItem)
 async def add_favorite(fav: FavoriteCreate):
     obj = FavoriteItem(**fav.model_dump())
-    doc = obj.model_dump()
-    doc["created_at"] = doc["created_at"].isoformat()
-    await db.favorites.update_one(
-        {"client_id": obj.client_id, "type": obj.type, "stream_id": obj.stream_id},
-        {"$set": doc},
-        upsert=True,
-    )
+    payload = {
+        "id": obj.id,
+        "client_id": obj.client_id,
+        "type": obj.type,
+        "stream_id": obj.stream_id,
+        "name": obj.name,
+        "icon": obj.icon,
+        "extra": obj.extra,
+        "created_at": obj.created_at.replace(tzinfo=None),
+    }
+    async with SessionLocal() as session:
+        stmt = _upsert(
+            FavoriteRow,
+            payload,
+            update_keys=("name", "icon", "extra"),
+            conflict_cols=["client_id", "type", "stream_id"],
+        )
+        await session.execute(stmt)
+        await session.commit()
     return obj
 
 
 @api_router.get("/favorites", response_model=List[FavoriteItem])
 async def list_favorites(client_id: str):
-    items = await db.favorites.find({"client_id": client_id}, {"_id": 0}).to_list(1000)
-    for it in items:
-        if isinstance(it.get("created_at"), str):
-            it["created_at"] = datetime.fromisoformat(it["created_at"])
-    return items
+    async with SessionLocal() as session:
+        rows = (await session.execute(
+            select(FavoriteRow).where(FavoriteRow.client_id == client_id)
+        )).scalars().all()
+    return [
+        FavoriteItem(
+            id=r.id, client_id=r.client_id, type=r.type, stream_id=r.stream_id,
+            name=r.name, icon=r.icon, extra=r.extra,
+            created_at=r.created_at,
+        )
+        for r in rows
+    ]
 
 
 @api_router.delete("/favorites")
 async def remove_favorite(client_id: str, type: str, stream_id: str):
-    await db.favorites.delete_one({"client_id": client_id, "type": type, "stream_id": stream_id})
+    async with SessionLocal() as session:
+        await session.execute(
+            delete(FavoriteRow).where(
+                FavoriteRow.client_id == client_id,
+                FavoriteRow.type == type,
+                FavoriteRow.stream_id == stream_id,
+            )
+        )
+        await session.commit()
     return {"ok": True}
 
 
@@ -379,32 +469,61 @@ async def remove_favorite(client_id: str, type: str, stream_id: str):
 @api_router.post("/history", response_model=HistoryItem)
 async def upsert_history(item: HistoryUpsert):
     obj = HistoryItem(**item.model_dump())
-    doc = obj.model_dump()
-    doc["updated_at"] = doc["updated_at"].isoformat()
-    await db.history.update_one(
-        {"client_id": obj.client_id, "type": obj.type, "stream_id": obj.stream_id},
-        {"$set": doc},
-        upsert=True,
-    )
+    payload = {
+        "id": obj.id,
+        "client_id": obj.client_id,
+        "type": obj.type,
+        "stream_id": obj.stream_id,
+        "name": obj.name,
+        "icon": obj.icon,
+        "position": obj.position,
+        "duration": obj.duration,
+        "extra": obj.extra,
+        "updated_at": obj.updated_at.replace(tzinfo=None),
+    }
+    async with SessionLocal() as session:
+        stmt = _upsert(
+            HistoryRow,
+            payload,
+            update_keys=("name", "icon", "position", "duration", "extra", "updated_at"),
+            conflict_cols=["client_id", "type", "stream_id"],
+        )
+        await session.execute(stmt)
+        await session.commit()
     return obj
 
 
 @api_router.get("/history", response_model=List[HistoryItem])
 async def list_history(client_id: str, limit: int = 30):
-    items = (
-        await db.history.find({"client_id": client_id}, {"_id": 0})
-        .sort("updated_at", -1)
-        .to_list(limit)
-    )
-    for it in items:
-        if isinstance(it.get("updated_at"), str):
-            it["updated_at"] = datetime.fromisoformat(it["updated_at"])
-    return items
+    async with SessionLocal() as session:
+        rows = (await session.execute(
+            select(HistoryRow)
+            .where(HistoryRow.client_id == client_id)
+            .order_by(HistoryRow.updated_at.desc())
+            .limit(limit)
+        )).scalars().all()
+    return [
+        HistoryItem(
+            id=r.id, client_id=r.client_id, type=r.type, stream_id=r.stream_id,
+            name=r.name, icon=r.icon, position=r.position or 0.0,
+            duration=r.duration or 0.0, extra=r.extra,
+            updated_at=r.updated_at,
+        )
+        for r in rows
+    ]
 
 
 @api_router.delete("/history")
 async def remove_history(client_id: str, type: str, stream_id: str):
-    await db.history.delete_one({"client_id": client_id, "type": type, "stream_id": stream_id})
+    async with SessionLocal() as session:
+        await session.execute(
+            delete(HistoryRow).where(
+                HistoryRow.client_id == client_id,
+                HistoryRow.type == type,
+                HistoryRow.stream_id == stream_id,
+            )
+        )
+        await session.commit()
     return {"ok": True}
 
 
@@ -429,4 +548,4 @@ logger = logging.getLogger(__name__)
 @app.on_event("shutdown")
 async def shutdown_db_client():
     await http_client.aclose()
-    client.close()
+    await engine.dispose()
