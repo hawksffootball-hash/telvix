@@ -17,7 +17,7 @@ set -e
 
 # ════════════════════════════════════════════════════════════════════
 # CONFIGURACIÓN — EDITA ESTOS 3 VALORES ANTES DE EJECUTAR
-DOMAIN="televix.tudominio.com"
+DOMAIN="moviesymas.vip"
 REPO_URL="https://github.com/TU_USUARIO/televix.git"
 EMAIL="tu@correo.com"
 
