@@ -43,10 +43,16 @@
 - `/app/packaging/webos/` — appinfo.json + index.html para LG webOS `.ipk`
 - `/app/packaging/README.md` — instrucciones completas para empaquetar y desplegar en TVs
 
+## Validado (2026-02 — Despliegue VPS)
+- ✅ Producción en `https://moviesymas.vip` (VPS Ubuntu 24.04, Nginx + PM2 + MariaDB + Certbot)
+- ✅ Puente TV nativo: cuando `?tv=tizen` o `?tv=webos` está en la URL, el Player envía `postMessage({action:'play', url})` al wrapper en vez de remuxear → el reproductor nativo del TV (AVPlay / `<video>` con `mediaOption`) reproduce el MKV con multi-audio y subs.
+- ✅ Packaging `tizen/index.html`, `webos/index.html`, `tizen/config.xml` actualizados a `moviesymas.vip`
+- ✅ Guía `packaging/TV-INSTALL-GUIDE.md` con pasos para Samsung Developer Mode + Tizen Studio y LG Developer Mode + webOS CLI
+
 ## Backlog
 ### P1
 - Búsqueda en modo M3U (actualmente solo Xtream)
-- Player audio/subtítulos selector
+- Auth multi-usuario con JWT (mover credenciales Xtream de `localStorage` a la DB por usuario)
 - Detalle de canal en vivo (vista previa antes de entrar a fullscreen)
 
 ### P2

@@ -10,5 +10,5 @@
     <tizen:metadata key="http://samsung.com/tv/metadata/use.cobalt" value="false"/>
     <tizen:metadata key="http://samsung.com/tv/metadata/prelaunch.support" value="false"/>
     <access origin="*" subdomains="true"/>
-    <tizen:allow-navigation>* *.preview.emergentagent.com</tizen:allow-navigation>
+    <tizen:allow-navigation>* moviesymas.vip *.moviesymas.vip</tizen:allow-navigation>
 </widget>

@@ -41,6 +41,11 @@ export default function Player() {
   useEffect(() => {
     let url = null;
     let useRemux = false;
+    // Detect TV wrapper (Samsung Tizen / LG webOS) via querystring
+    const tvMode = (typeof window !== "undefined")
+      ? new URLSearchParams(window.location.search).get("tv")
+      : null;
+    const isTvWrapper = tvMode === "tizen" || tvMode === "webos";
     if (creds?.mode === "m3u" && type === "m3u") {
       url = state?.url || null;
     } else if (creds?.mode === "xtream") {
@@ -62,6 +67,25 @@ export default function Player() {
       setLoading(false);
       return;
     }
+    // En TV nativa (Tizen/webOS) NO remuxear: el wrapper nativo reproduce el MKV original
+    // con AVPlay/Video Tag que sí expone múltiples pistas de audio y subtítulos.
+    if (isTvWrapper && useRemux) {
+      try {
+        window.parent.postMessage({
+          action: "play",
+          url: url,
+          title: state?.name || state?.title || "Reproduciendo",
+          type: type,
+        }, "*");
+      } catch (e) {
+        console.error("TV bridge postMessage failed", e);
+      }
+      // Mantener un placeholder visible con info
+      setSrc(null);
+      setLoading(false);
+      setTitle(state?.name || state?.title || "Reproduciendo en TV");
+      return;
+    }
     // Para VOD/series pasamos por el remuxer ffmpeg → fMP4
     // Para live usamos el proxy HLS normal (ya funciona bien)
     if (useRemux) {
@@ -71,6 +95,18 @@ export default function Player() {
     }
     setTitle(state?.name || state?.title || "Reproduciendo");
   }, [creds, type, id, state]);
+
+  // Avisar al wrapper nativo cuando salgamos del player
+  useEffect(() => {
+    return () => {
+      const tvMode = (typeof window !== "undefined")
+        ? new URLSearchParams(window.location.search).get("tv")
+        : null;
+      if (tvMode === "tizen" || tvMode === "webos") {
+        try { window.parent.postMessage({ action: "stop" }, "*"); } catch (_) {}
+      }
+    };
+  }, []);
 
   // Setup HLS
   useEffect(() => {
