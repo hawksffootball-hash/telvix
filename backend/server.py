@@ -303,17 +303,50 @@ async def m3u_parse(q: M3UQuery):
 @api_router.get("/remux/mp4")
 async def remux_to_mp4(u: str = Query(...)):
     """
-    Remuxea un video (MKV/AVI/etc) a fMP4 fragmentado sin transcodificar
-    (solo -c copy), apto para <video> del navegador. Usa ffmpeg.
+    Remuxea video (MKV/AVI/etc) a fMP4 para <video> del navegador.
+    Detecta codec con ffprobe: si es HEVC/AV1 transcodifica a H.264.
+    Si es H.264, solo remux (rápido).
     """
     import asyncio
+    # 1) Detectar codec con ffprobe (3s timeout)
+    vcodec = "h264"
+    try:
+        probe = await asyncio.create_subprocess_exec(
+            "ffprobe", "-v", "error", "-select_streams", "v:0",
+            "-show_entries", "stream=codec_name", "-of", "csv=p=0",
+            "-user_agent", "VLC/3.0.20 LibVLC/3.0.20",
+            u,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.DEVNULL,
+        )
+        try:
+            out, _ = await asyncio.wait_for(probe.communicate(), timeout=4.0)
+            vcodec = (out.decode().strip().splitlines() or ["h264"])[0].lower()
+        except asyncio.TimeoutError:
+            probe.kill()
+    except Exception:
+        pass
+
+    # 2) Construir comando según codec
+    needs_transcode = vcodec in ("hevc", "h265", "av1", "vp9", "mpeg4", "wmv3", "vc1")
     cmd = [
         "ffmpeg",
         "-loglevel", "error",
         "-user_agent", "VLC/3.0.20 LibVLC/3.0.20",
         "-i", u,
-        "-c:v", "copy",
-        "-c:a", "aac",           # algunos navegadores no soportan DTS/AC3/etc → forzar AAC
+    ]
+    if needs_transcode:
+        cmd += [
+            "-c:v", "libx264",
+            "-preset", "ultrafast",
+            "-tune", "zerolatency",
+            "-crf", "23",
+            "-pix_fmt", "yuv420p",
+        ]
+    else:
+        cmd += ["-c:v", "copy"]
+    cmd += [
+        "-c:a", "aac",
         "-b:a", "192k",
         "-movflags", "frag_keyframe+empty_moov+default_base_moof",
         "-f", "mp4",

@@ -1,10 +1,20 @@
 import React, { useEffect, useRef, useState, useCallback } from "react";
 import { useParams, useLocation, useNavigate } from "react-router-dom";
 import Hls from "hls.js";
-import { ArrowLeft, Loader2, Play, Pause, Volume2, VolumeX, Star, StarOff, Languages, Subtitles, ChevronLeft, ChevronRight } from "lucide-react";
+import { ArrowLeft, Loader2, Play, Pause, Volume2, VolumeX, Star, StarOff, Languages, Subtitles, ChevronLeft, ChevronRight, Rewind, FastForward } from "lucide-react";
 import { api, buildXtreamUrl, playableUrl, API } from "../lib/api";
 import { useAuth } from "../context/AuthContext";
 import { toast } from "sonner";
+
+function fmtTime(s) {
+  if (!s || isNaN(s) || !isFinite(s)) return "0:00";
+  const total = Math.floor(s);
+  const h = Math.floor(total / 3600);
+  const m = Math.floor((total % 3600) / 60);
+  const sec = total % 60;
+  if (h > 0) return `${h}:${String(m).padStart(2, "0")}:${String(sec).padStart(2, "0")}`;
+  return `${m}:${String(sec).padStart(2, "0")}`;
+}
 
 export default function Player() {
   const { type, id } = useParams();
@@ -30,6 +40,8 @@ export default function Player() {
   const [subTracks, setSubTracks] = useState([]);
   const [subIdx, setSubIdx] = useState(-1);
   const [openMenu, setOpenMenu] = useState(null); // 'audio' | 'subs' | null
+  const [curTime, setCurTime] = useState(0);
+  const [duration, setDuration] = useState(0);
 
   const showControls = useCallback(() => {
     setShowUI(true);
@@ -204,6 +216,22 @@ export default function Player() {
     };
   }, [src, type]);
 
+  // Track current time + duration for the progress bar
+  useEffect(() => {
+    const v = videoRef.current;
+    if (!v) return;
+    const onTime = () => setCurTime(v.currentTime || 0);
+    const onDur = () => setDuration(v.duration || 0);
+    v.addEventListener("timeupdate", onTime);
+    v.addEventListener("loadedmetadata", onDur);
+    v.addEventListener("durationchange", onDur);
+    return () => {
+      v.removeEventListener("timeupdate", onTime);
+      v.removeEventListener("loadedmetadata", onDur);
+      v.removeEventListener("durationchange", onDur);
+    };
+  }, [src]);
+
   // EPG for live
   useEffect(() => {
     if (type !== "live" || creds?.mode !== "xtream") return;
@@ -317,6 +345,20 @@ export default function Player() {
       v.pause();
       setPlaying(false);
     }
+    showControls();
+  };
+
+  const seekBy = (delta) => {
+    const v = videoRef.current;
+    if (!v) return;
+    v.currentTime = Math.max(0, Math.min((v.duration || 0) - 0.5, (v.currentTime || 0) + delta));
+    showControls();
+  };
+
+  const seekTo = (pct) => {
+    const v = videoRef.current;
+    if (!v || !v.duration) return;
+    v.currentTime = Math.max(0, Math.min(v.duration - 0.5, pct * v.duration));
     showControls();
   };
 
@@ -527,13 +569,53 @@ export default function Player() {
                 </div>
               </>
             ) : (
-              <>
+              <div className="w-full">
+                {/* Barra de progreso */}
+                <div className="mb-4 flex items-center gap-4">
+                  <span data-testid="player-cur-time" className="text-sm font-mono text-neutral-300 w-16 text-right tabular-nums">
+                    {fmtTime(curTime)}
+                  </span>
+                  <div className="flex-1 relative h-2 bg-white/15 rounded-full overflow-hidden cursor-pointer"
+                       onClick={(e) => {
+                         const rect = e.currentTarget.getBoundingClientRect();
+                         seekTo((e.clientX - rect.left) / rect.width);
+                       }}
+                       data-testid="player-progress">
+                    <div
+                      className="absolute inset-y-0 left-0 bg-[#FFB800] rounded-full"
+                      style={{ width: duration ? `${(curTime / duration) * 100}%` : "0%" }}
+                    />
+                  </div>
+                  <span data-testid="player-dur-time" className="text-sm font-mono text-neutral-300 w-16 tabular-nums">
+                    {fmtTime(duration)}
+                  </span>
+                </div>
+                {/* Controles */}
+                <div className="flex items-center gap-3 flex-wrap">
+                <button
+                  onClick={() => seekBy(-10)}
+                  data-testid="player-rewind"
+                  title="Retroceder 10s"
+                  className="focus-tv bg-black/60 backdrop-blur-md rounded-full p-5 outline-none flex items-center gap-2"
+                >
+                  <Rewind className="w-6 h-6 fill-white" />
+                  <span className="text-sm font-semibold uppercase tracking-wider hidden md:inline">-10s</span>
+                </button>
                 <button
                   onClick={togglePlay}
                   data-testid="player-playpause"
                   className="focus-tv bg-[#FFB800] text-black rounded-full p-5 outline-none"
                 >
                   {playing ? <Pause className="w-7 h-7 fill-black" /> : <Play className="w-7 h-7 fill-black" />}
+                </button>
+                <button
+                  onClick={() => seekBy(10)}
+                  data-testid="player-forward"
+                  title="Adelantar 10s"
+                  className="focus-tv bg-black/60 backdrop-blur-md rounded-full p-5 outline-none flex items-center gap-2"
+                >
+                  <span className="text-sm font-semibold uppercase tracking-wider hidden md:inline">+10s</span>
+                  <FastForward className="w-6 h-6 fill-white" />
                 </button>
                 <button
                   onClick={toggleMute}
@@ -609,7 +691,8 @@ export default function Player() {
                 <div className="text-sm text-neutral-400 ml-2 hidden lg:block">
                   ← → saltar 10s · Espacio play/pausa · Esc volver
                 </div>
-              </>
+                </div>
+              </div>
             )}
           </div>
         </div>
