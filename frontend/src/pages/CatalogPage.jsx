@@ -4,7 +4,6 @@ import { Loader2, Search as SearchIcon } from "lucide-react";
 import { api } from "../lib/api";
 import { useAuth } from "../context/AuthContext";
 import PosterCard, { LiveCard } from "../components/PosterCard";
-import Row from "../components/Row";
 import LivePreview from "../components/LivePreview";
 
 export default function CatalogPage({ type }) {
@@ -68,31 +67,16 @@ export default function CatalogPage({ type }) {
     return [...base].sort(sortFn);
   }, [items, activeCat, query, sortBy]);
 
-  // Items agrupados por categoría (estilo Netflix) — una fila por categoría
-  const itemsByCategory = useMemo(() => {
-    if (type === "live") return [];
-    const map = new Map();
-    items.forEach((it) => {
-      const cid = String(it.category_id || "uncat");
-      if (!map.has(cid)) map.set(cid, []);
-      map.get(cid).push(it);
-    });
-    return categories
-      .map((c) => ({
-        id: String(c.category_id),
-        name: c.category_name,
-        items: (map.get(String(c.category_id)) || []).slice().sort(sortFn),
-      }))
-      .filter((c) => c.items.length > 0);
-  }, [items, categories, type, sortBy]);
+  // Items agrupados por categoría — ya no se usa en "Todas" (queda comentado por compat futura)
+  // eslint-disable-next-line no-unused-vars
+  const itemsByCategory = useMemo(() => [], []);
 
-  // Últimos 50 agregados (added vod / last_modified series)
+  // Últimos 100 agregados (added vod / last_modified series) - se muestra en "Todas"
   const latest = useMemo(() => {
     if (type === "live") return [];
     return [...items]
-      .filter((it) => it.added || it.last_modified)
       .sort((a, b) => Number(b.added || b.last_modified || 0) - Number(a.added || a.last_modified || 0))
-      .slice(0, 50);
+      .slice(0, 100);
   }, [items, type]);
 
   const openItem = (it, idx, listForLive) => {
@@ -205,35 +189,20 @@ export default function CatalogPage({ type }) {
               />
             )}
             {type !== "live" && activeCat === "all" && !query.trim() ? (
-              // Vista estilo Netflix: una fila por categoría
-              <div className="space-y-12">
-                {latest.length > 0 && (
-                  <Row title="Últimos 50 agregados" testid="row-latest">
-                    {latest.map((it, idx) => (
-                      <PosterCard
-                        key={`latest-${it.stream_id || it.series_id}`}
-                        testid={`latest-${type}-${idx}`}
-                        title={it.name}
-                        image={it.stream_icon || it.cover}
-                        meta={it.rating ? `★ ${it.rating}` : null}
-                        onActivate={() => openItem(it, idx)}
-                      />
-                    ))}
-                  </Row>
-                )}
-                {itemsByCategory.map((cat) => (
-                  <Row key={`cat-row-${cat.id}`} title={cat.name} testid={`row-cat-${cat.id}`}>
-                    {cat.items.slice(0, 40).map((it, idx) => (
-                      <PosterCard
-                        key={`${cat.id}-${it.stream_id || it.series_id}-${idx}`}
-                        testid={`${type}-cat-${cat.id}-${idx}`}
-                        title={it.name}
-                        image={it.stream_icon || it.cover}
-                        meta={it.rating ? `★ ${it.rating}` : null}
-                        onActivate={() => openItem(it, idx)}
-                      />
-                    ))}
-                  </Row>
+              // Vista "Todas": grid simple con las 100 últimas agregadas (sin filas por categoría)
+              <div
+                className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-7 gap-6"
+                data-testid="latest-grid"
+              >
+                {latest.map((it, idx) => (
+                  <PosterCard
+                    key={`latest-${it.stream_id || it.series_id}-${idx}`}
+                    testid={`latest-${type}-${idx}`}
+                    title={it.name}
+                    image={it.stream_icon || it.cover}
+                    meta={it.rating ? `★ ${it.rating}` : null}
+                    onActivate={() => openItem(it, idx)}
+                  />
                 ))}
               </div>
             ) : (

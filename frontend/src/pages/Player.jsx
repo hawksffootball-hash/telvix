@@ -42,6 +42,10 @@ export default function Player() {
   const [openMenu, setOpenMenu] = useState(null); // 'audio' | 'subs' | null
   const [curTime, setCurTime] = useState(0);
   const [duration, setDuration] = useState(0);
+  // URL original Xtream (sin proxy/remux) para llamar /streams/info y elegir pistas
+  const [originalUrl, setOriginalUrl] = useState(null);
+  // Pista seleccionada (necesaria para reconstruir el URL del remuxer)
+  const [selAudio, setSelAudio] = useState(0);
 
   const showControls = useCallback(() => {
     setShowUI(true);
@@ -98,15 +102,17 @@ export default function Player() {
       setTitle(state?.name || state?.title || "Reproduciendo en TV");
       return;
     }
-    // Para VOD/series pasamos por el remuxer ffmpeg → fMP4
-    // Para live usamos el proxy HLS normal (ya funciona bien)
+    // Para VOD/series pasamos por el remuxer ffmpeg → fMP4 (transcoded H.264)
+    // Permite elegir pista de audio con ?audio=N
     if (useRemux) {
-      setSrc(`${API}/remux/mp4?u=${encodeURIComponent(url)}`);
+      setOriginalUrl(url);
+      setSrc(`${API}/remux/mp4?audio=${selAudio}&u=${encodeURIComponent(url)}`);
     } else {
+      setOriginalUrl(null);
       setSrc(playableUrl(url));
     }
     setTitle(state?.name || state?.title || "Reproduciendo");
-  }, [creds, type, id, state]);
+  }, [creds, type, id, state, selAudio]);
 
   // Avisar al wrapper nativo cuando salgamos del player
   useEffect(() => {
@@ -231,6 +237,29 @@ export default function Player() {
       v.removeEventListener("durationchange", onDur);
     };
   }, [src]);
+
+  // Cargar pistas de audio/subs reales del archivo (vía ffprobe) cuando hay remuxer
+  useEffect(() => {
+    if (!originalUrl) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const { data } = await api.get("/streams/info", { params: { u: originalUrl } });
+        if (cancelled) return;
+        setAudioTracks((data.audio || []).map((a) => ({
+          id: a.idx,
+          label: a.label + (a.lang ? ` (${a.lang})` : ""),
+          lang: a.lang || "",
+        })));
+        setSubTracks((data.subs || []).map((s) => ({
+          id: s.idx,
+          label: s.label + (s.lang ? ` (${s.lang})` : ""),
+          lang: s.lang || "",
+        })));
+      } catch { /* no-op */ }
+    })();
+    return () => { cancelled = true; };
+  }, [originalUrl]);
 
   // EPG for live
   useEffect(() => {
@@ -373,12 +402,27 @@ export default function Player() {
   const setAudio = (idx) => {
     if (hlsRef.current) {
       hlsRef.current.audioTrack = idx;
+      setAudioIdx(idx);
+    } else if (originalUrl) {
+      // Backend remux: recargar src con nuevo audio= y restaurar posición
+      const v = videoRef.current;
+      const resumeAt = v?.currentTime || 0;
+      setSelAudio(idx);
+      setAudioIdx(idx);
+      setTimeout(() => {
+        if (videoRef.current) {
+          const tryResume = () => {
+            try { videoRef.current.currentTime = resumeAt; } catch (_) {}
+            videoRef.current.removeEventListener("loadedmetadata", tryResume);
+          };
+          videoRef.current.addEventListener("loadedmetadata", tryResume);
+        }
+      }, 100);
+      toast.success("Cambiando pista de audio…");
     } else if (videoRef.current?.audioTracks) {
-      Array.from(videoRef.current.audioTracks).forEach((t, i) => {
-        t.enabled = i === idx;
-      });
+      Array.from(videoRef.current.audioTracks).forEach((t, i) => { t.enabled = i === idx; });
+      setAudioIdx(idx);
     }
-    setAudioIdx(idx);
     setOpenMenu(null);
     showControls();
   };
@@ -387,12 +431,35 @@ export default function Player() {
     if (hlsRef.current) {
       hlsRef.current.subtitleTrack = idx;
       hlsRef.current.subtitleDisplay = idx >= 0;
+      setSubIdx(idx);
+    } else if (originalUrl) {
+      // Backend extrae WebVTT y lo adjuntamos al <video> como <track>
+      const v = videoRef.current;
+      if (!v) return;
+      // Limpiar tracks anteriores que hayamos añadido
+      Array.from(v.querySelectorAll("track[data-injected]")).forEach((el) => el.remove());
+      Array.from(v.textTracks).forEach((t) => { t.mode = "disabled"; });
+      if (idx >= 0) {
+        const tr = document.createElement("track");
+        tr.kind = "subtitles";
+        tr.label = (subTracks.find((s) => s.id === idx)?.label) || `Sub ${idx + 1}`;
+        tr.srclang = subTracks.find((s) => s.id === idx)?.lang || "es";
+        tr.default = true;
+        tr.dataset.injected = "1";
+        tr.src = `${API}/subs/vtt?track=${idx}&u=${encodeURIComponent(originalUrl)}`;
+        v.appendChild(tr);
+        setTimeout(() => {
+          const last = Array.from(v.textTracks).pop();
+          if (last) last.mode = "showing";
+        }, 400);
+      }
+      setSubIdx(idx);
     } else if (videoRef.current?.textTracks) {
       Array.from(videoRef.current.textTracks).forEach((t, i) => {
         t.mode = i === idx ? "showing" : "disabled";
       });
+      setSubIdx(idx);
     }
-    setSubIdx(idx);
     setOpenMenu(null);
     showControls();
   };
@@ -565,7 +632,6 @@ export default function Player() {
                   {muted ? <VolumeX className="w-6 h-6" /> : <Volume2 className="w-6 h-6" />}
                 </button>
                 <div className="text-sm text-neutral-400 ml-2 hidden lg:block">
-                  ← → cambiar canal · M silenciar · Esc volver
                 </div>
               </>
             ) : (
@@ -689,7 +755,6 @@ export default function Player() {
                   </button>
                 ) : null}
                 <div className="text-sm text-neutral-400 ml-2 hidden lg:block">
-                  ← → saltar 10s · Espacio play/pausa · Esc volver
                 </div>
                 </div>
               </div>

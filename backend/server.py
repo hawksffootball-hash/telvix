@@ -300,57 +300,82 @@ async def m3u_parse(q: M3UQuery):
 
 
 # ------------------- Stream Proxy -------------------
-@api_router.get("/remux/mp4")
-async def remux_to_mp4(u: str = Query(...)):
-    """
-    Remuxea video (MKV/AVI/etc) a fMP4 para <video> del navegador.
-    Detecta codec con ffprobe: si es HEVC/AV1 transcodifica a H.264.
-    Si es H.264, solo remux (rápido).
-    """
+@api_router.get("/streams/info")
+async def streams_info(u: str = Query(...)):
+    """Devuelve pistas de audio y subtítulos disponibles con ffprobe."""
     import asyncio
-    # 1) Detectar codec con ffprobe (3s timeout)
-    vcodec = "h264"
+    import json
     try:
-        probe = await asyncio.create_subprocess_exec(
-            "ffprobe", "-v", "error", "-select_streams", "v:0",
-            "-show_entries", "stream=codec_name", "-of", "csv=p=0",
+        proc = await asyncio.create_subprocess_exec(
+            "ffprobe", "-v", "error",
             "-user_agent", "VLC/3.0.20 LibVLC/3.0.20",
-            u,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.DEVNULL,
+            "-show_entries", "stream=index,codec_type,codec_name:stream_tags=language,title",
+            "-of", "json", u,
+            stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.DEVNULL,
         )
-        try:
-            out, _ = await asyncio.wait_for(probe.communicate(), timeout=4.0)
-            vcodec = (out.decode().strip().splitlines() or ["h264"])[0].lower()
-        except asyncio.TimeoutError:
-            probe.kill()
+        out, _ = await asyncio.wait_for(proc.communicate(), timeout=6.0)
+        data = json.loads(out.decode() or "{}")
     except Exception:
-        pass
+        return {"audio": [], "subs": []}
+    audio, subs = [], []
+    a_idx = s_idx = 0
+    for st in data.get("streams", []):
+        tags = st.get("tags") or {}
+        label = tags.get("title") or tags.get("language") or ""
+        if st.get("codec_type") == "audio":
+            audio.append({"idx": a_idx, "lang": tags.get("language") or "",
+                          "label": label or f"Audio {a_idx + 1}",
+                          "codec": st.get("codec_name", "")})
+            a_idx += 1
+        elif st.get("codec_type") == "subtitle":
+            subs.append({"idx": s_idx, "lang": tags.get("language") or "",
+                         "label": label or f"Sub {s_idx + 1}",
+                         "codec": st.get("codec_name", "")})
+            s_idx += 1
+    return {"audio": audio, "subs": subs}
 
-    # 2) Construir comando según codec
-    needs_transcode = vcodec in ("hevc", "h265", "av1", "vp9", "mpeg4", "wmv3", "vc1")
+
+@api_router.get("/subs/vtt")
+async def subs_vtt(u: str = Query(...), track: int = Query(0)):
+    """Extrae una pista de subtítulos como WebVTT."""
+    import asyncio
     cmd = [
-        "ffmpeg",
-        "-loglevel", "error",
+        "ffmpeg", "-loglevel", "error",
+        "-user_agent", "VLC/3.0.20 LibVLC/3.0.20",
+        "-i", u, "-map", f"0:s:{track}",
+        "-c:s", "webvtt", "-f", "webvtt", "pipe:1",
+    ]
+    proc = await asyncio.create_subprocess_exec(
+        *cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.DEVNULL,
+    )
+    try:
+        out, _ = await asyncio.wait_for(proc.communicate(), timeout=30.0)
+    except Exception:
+        try:
+            proc.kill()
+        except Exception:
+            pass
+        out = b""
+    return Response(content=out, media_type="text/vtt",
+                    headers={"Access-Control-Allow-Origin": "*", "Cache-Control": "no-store"})
+
+
+@api_router.get("/remux/mp4")
+async def remux_to_mp4(u: str = Query(...), audio: int = Query(0)):
+    """Transcodifica SIEMPRE video a H.264 + audio AAC para máxima compatibilidad.
+    Permite elegir pista de audio con ?audio=N (0-indexed)."""
+    import asyncio
+    cmd = [
+        "ffmpeg", "-loglevel", "error",
         "-user_agent", "VLC/3.0.20 LibVLC/3.0.20",
         "-i", u,
-    ]
-    if needs_transcode:
-        cmd += [
-            "-c:v", "libx264",
-            "-preset", "ultrafast",
-            "-tune", "zerolatency",
-            "-crf", "23",
-            "-pix_fmt", "yuv420p",
-        ]
-    else:
-        cmd += ["-c:v", "copy"]
-    cmd += [
-        "-c:a", "aac",
-        "-b:a", "192k",
+        "-map", "0:v:0",
+        "-map", f"0:a:{audio}?",
+        "-c:v", "libx264", "-preset", "ultrafast", "-tune", "zerolatency",
+        "-crf", "23", "-pix_fmt", "yuv420p",
+        "-c:a", "aac", "-b:a", "192k",
         "-movflags", "frag_keyframe+empty_moov+default_base_moof",
-        "-f", "mp4",
-        "pipe:1",
+        "-f", "mp4", "pipe:1",
     ]
     proc = await asyncio.create_subprocess_exec(
         *cmd,
