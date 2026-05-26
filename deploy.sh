@@ -27,10 +27,20 @@ yarn build
 cd ..
 
 echo "[4/5] Reiniciando servicios..."
-pm2 restart televix-api 2>/dev/null \
-  || sudo systemctl restart televix-backend 2>/dev/null \
-  || sudo systemctl restart televix 2>/dev/null \
-  || echo "[!] Reinicia el backend manualmente"
+# Detectar cómo corre el backend e intentar reiniciar de la forma correcta
+if systemctl list-units --type=service --all 2>/dev/null | grep -qi 'televix-api\|televix-backend\|televix\.service'; then
+    SRV=$(systemctl list-units --type=service --all 2>/dev/null | grep -i 'televix' | awk '{print $1}' | grep -v pm2 | head -1)
+    [ -n "$SRV" ] && sudo systemctl restart "$SRV" && echo "Reiniciado: $SRV"
+fi
+# Fallback: matar uvicorn (systemd lo respawnea si está configurado)
+sudo pkill -f "uvicorn server:app" 2>/dev/null || true
+sleep 3
+# Si no volvió a levantarse, lanzar manualmente
+if ! curl -sf http://localhost:8001/api/ -o /dev/null; then
+    sudo -u televix bash -c "cd /home/televix/televix/backend && source venv/bin/activate && nohup uvicorn server:app --host 127.0.0.1 --port 8001 --workers 2 > /var/log/televix-backend.log 2>&1 &"
+    sleep 3
+fi
+curl -s http://localhost:8001/api/ -o /dev/null -w "Backend HTTP %{http_code}\n"
 sudo systemctl reload nginx
 
 echo "[5/5] Repackage .ipk para LG..."
