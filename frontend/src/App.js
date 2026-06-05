@@ -12,6 +12,8 @@ import VodDetail from "./pages/VodDetail";
 import Favorites from "./pages/Favorites";
 import Search from "./pages/Search";
 import Player from "./pages/Player";
+import Admin from "./pages/Admin";
+import HeartbeatPing from "./components/HeartbeatPing";
 
 function Guard({ children }) {
   const { isAuthed } = useAuth();
@@ -28,8 +30,10 @@ export default function App() {
     <div className="App">
       <AuthProvider>
         <BrowserRouter>
+          <HeartbeatPing />
           <Routes>
             <Route path="/login" element={<Login />} />
+            <Route path="/admin" element={<Admin />} />
             <Route
               path="/"
               element={

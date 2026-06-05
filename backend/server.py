@@ -73,6 +73,25 @@ class HistoryRow(Base):
     __table_args__ = (UniqueConstraint("client_id", "type", "stream_id", name="uq_hist"),)
 
 
+class HeartbeatRow(Base):
+    __tablename__ = "heartbeats"
+    client_id = Column(String(64), primary_key=True)
+    ip = Column(String(64))
+    server_used = Column(String(512))
+    username_used = Column(String(128))
+    user_agent = Column(String(512))
+    last_seen = Column(DateTime, nullable=False, index=True)
+
+
+class AllowedServerRow(Base):
+    __tablename__ = "allowed_servers"
+    id = Column(String(36), primary_key=True)
+    server_url = Column(String(512), nullable=False, unique=True)
+    label = Column(String(256))
+    active = Column(String(8), default="1")  # "1" / "0" como string para portabilidad
+    created_at = Column(DateTime, nullable=False)
+
+
 engine = create_async_engine(DATABASE_URL, pool_pre_ping=True, pool_recycle=1800)
 SessionLocal = async_sessionmaker(engine, expire_on_commit=False, class_=AsyncSession)
 
@@ -204,8 +223,37 @@ async def root():
     return {"message": "TV Stream API"}
 
 
+ADMIN_TOKEN = os.environ.get("ADMIN_TOKEN", "televix-admin-2026")
+
+
+async def _is_server_allowed(server_url: str) -> bool:
+    """True si no hay whitelist (vacía) o si el server está activo en ella."""
+    normalized = (server_url or "").rstrip("/").lower()
+    async with SessionLocal() as session:
+        res = await session.execute(select(AllowedServerRow))
+        rows = res.scalars().all()
+    if not rows:
+        return True  # whitelist vacía = todo permitido
+    for r in rows:
+        if r.active == "1" and (r.server_url or "").rstrip("/").lower() == normalized:
+            return True
+    return False
+
+
+def _require_admin(request: Request):
+    """Valida el header X-Admin-Token."""
+    token = request.headers.get("x-admin-token") or request.query_params.get("admin_token")
+    if token != ADMIN_TOKEN:
+        raise HTTPException(status_code=403, detail="No autorizado")
+
+
 @api_router.post("/xtream/login")
-async def xtream_login(creds: XtreamCreds):
+async def xtream_login(creds: XtreamCreds, request: Request):
+    if not await _is_server_allowed(creds.server):
+        raise HTTPException(
+            status_code=403,
+            detail="Servidor no permitido. Pide al administrador que lo habilite.",
+        )
     data = await xtream_call(creds)
     if not isinstance(data, dict) or "user_info" not in data:
         raise HTTPException(status_code=401, detail="Credenciales inválidas")
@@ -213,6 +261,153 @@ async def xtream_login(creds: XtreamCreds):
     if str(ui.get("auth", 0)) != "1":
         raise HTTPException(status_code=401, detail="Usuario no autorizado")
     return data
+
+
+# ------------------- Heartbeat (sesiones activas) -------------------
+class HeartbeatPayload(BaseModel):
+    client_id: str
+    server_used: Optional[str] = None
+    username_used: Optional[str] = None
+
+
+@api_router.post("/heartbeat")
+async def heartbeat(payload: HeartbeatPayload, request: Request):
+    ip = request.client.host if request.client else ""
+    # Si viene tras proxy/nginx, preferir X-Forwarded-For
+    fwd = request.headers.get("x-forwarded-for", "").split(",")[0].strip()
+    if fwd:
+        ip = fwd
+    ua = (request.headers.get("user-agent") or "")[:500]
+    now = datetime.now(timezone.utc)
+    async with SessionLocal() as session:
+        stmt = _upsert(
+            HeartbeatRow.__table__,
+            {
+                "client_id": payload.client_id,
+                "ip": ip,
+                "server_used": (payload.server_used or "")[:500],
+                "username_used": (payload.username_used or "")[:128],
+                "user_agent": ua,
+                "last_seen": now,
+            },
+            update_keys=["ip", "server_used", "username_used", "user_agent", "last_seen"],
+            conflict_cols=["client_id"],
+        )
+        await session.execute(stmt)
+        await session.commit()
+    return {"ok": True}
+
+
+# ------------------- ADMIN endpoints -------------------
+@api_router.post("/admin/auth")
+async def admin_auth(request: Request):
+    body = await request.json()
+    if body.get("token") != ADMIN_TOKEN:
+        raise HTTPException(status_code=403, detail="Token inválido")
+    return {"ok": True}
+
+
+@api_router.get("/admin/sessions")
+async def admin_sessions(request: Request, minutes: int = Query(5)):
+    _require_admin(request)
+    from datetime import timedelta
+    cutoff = datetime.now(timezone.utc) - timedelta(minutes=minutes)
+    async with SessionLocal() as session:
+        # Filtramos en Python para evitar problemas de timezone con MariaDB
+        res = await session.execute(select(HeartbeatRow))
+        rows = res.scalars().all()
+    out = []
+    for r in rows:
+        ls = r.last_seen
+        if ls and ls.tzinfo is None:
+            ls = ls.replace(tzinfo=timezone.utc)
+        if not ls or ls < cutoff:
+            continue
+        out.append({
+            "client_id": r.client_id,
+            "ip": r.ip,
+            "server_used": r.server_used,
+            "username_used": r.username_used,
+            "user_agent": (r.user_agent or "")[:120],
+            "last_seen": ls.isoformat() if ls else None,
+        })
+    out.sort(key=lambda x: x["last_seen"] or "", reverse=True)
+    return {"active": len(out), "sessions": out}
+
+
+@api_router.get("/admin/allowed-servers")
+async def admin_list_servers(request: Request):
+    _require_admin(request)
+    async with SessionLocal() as session:
+        res = await session.execute(select(AllowedServerRow))
+        rows = res.scalars().all()
+    return [{
+        "id": r.id,
+        "server_url": r.server_url,
+        "label": r.label,
+        "active": r.active == "1",
+        "created_at": r.created_at.isoformat() if r.created_at else None,
+    } for r in rows]
+
+
+@api_router.post("/admin/allowed-servers")
+async def admin_add_server(request: Request):
+    _require_admin(request)
+    body = await request.json()
+    server_url = (body.get("server_url") or "").strip().rstrip("/")
+    label = (body.get("label") or "").strip()
+    if not server_url:
+        raise HTTPException(status_code=400, detail="server_url requerido")
+    new_id = str(uuid.uuid4())
+    async with SessionLocal() as session:
+        stmt = _upsert(
+            AllowedServerRow.__table__,
+            {
+                "id": new_id,
+                "server_url": server_url,
+                "label": label,
+                "active": "1",
+                "created_at": datetime.now(timezone.utc),
+            },
+            update_keys=["label", "active"],
+            conflict_cols=["server_url"],
+        )
+        await session.execute(stmt)
+        await session.commit()
+    return {"ok": True, "id": new_id}
+
+
+@api_router.delete("/admin/allowed-servers/{server_id}")
+async def admin_delete_server(server_id: str, request: Request):
+    _require_admin(request)
+    async with SessionLocal() as session:
+        await session.execute(delete(AllowedServerRow).where(AllowedServerRow.id == server_id))
+        await session.commit()
+    return {"ok": True}
+
+
+@api_router.patch("/admin/allowed-servers/{server_id}")
+async def admin_toggle_server(server_id: str, request: Request):
+    _require_admin(request)
+    body = await request.json()
+    new_active = "1" if body.get("active") else "0"
+    async with SessionLocal() as session:
+        res = await session.execute(select(AllowedServerRow).where(AllowedServerRow.id == server_id))
+        row = res.scalar_one_or_none()
+        if not row:
+            raise HTTPException(status_code=404, detail="No existe")
+        row.active = new_active
+        await session.commit()
+    return {"ok": True}
+
+
+@api_router.delete("/admin/sessions/{client_id}")
+async def admin_kick_session(client_id: str, request: Request):
+    _require_admin(request)
+    async with SessionLocal() as session:
+        await session.execute(delete(HeartbeatRow).where(HeartbeatRow.client_id == client_id))
+        await session.commit()
+    return {"ok": True}
 
 
 @api_router.post("/xtream/categories")
