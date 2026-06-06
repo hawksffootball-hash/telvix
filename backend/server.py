@@ -556,22 +556,29 @@ async def subs_vtt(u: str = Query(...), track: int = Query(0)):
 
 
 @api_router.get("/remux/mp4")
-async def remux_to_mp4(u: str = Query(...), audio: int = Query(0)):
-    """Transcodifica SIEMPRE video a H.264 + audio AAC para máxima compatibilidad.
-    Permite elegir pista de audio con ?audio=N (0-indexed)."""
+async def remux_to_mp4(
+    u: str = Query(...),
+    audio: int = Query(0),
+    seek: float = Query(0.0),
+    force: int = Query(0),
+):
+    """Remuxer rápido. Por defecto: -c:v copy (sin transcodificar).
+    Solo transcodifica si force=1 o si pasa -ss para seek (necesita reencode)."""
     import asyncio
-    cmd = [
-        "ffmpeg", "-loglevel", "error",
-        "-user_agent", "VLC/3.0.20 LibVLC/3.0.20",
-        "-i", u,
-        "-map", "0:v:0",
-        "-map", f"0:a:{audio}?",
-        "-c:v", "libx264", "-preset", "ultrafast", "-tune", "zerolatency",
-        "-crf", "23", "-pix_fmt", "yuv420p",
-        "-c:a", "aac", "-b:a", "192k",
-        "-movflags", "frag_keyframe+empty_moov+default_base_moof",
-        "-f", "mp4", "pipe:1",
-    ]
+    needs_transcode = bool(force)
+    cmd = ["ffmpeg", "-loglevel", "warning",
+           "-user_agent", "VLC/3.0.20 LibVLC/3.0.20"]
+    if seek > 0:
+        cmd += ["-ss", str(seek)]
+    cmd += ["-i", u, "-map", "0:v:0", "-map", f"0:a:{audio}?"]
+    if needs_transcode:
+        cmd += ["-c:v", "libx264", "-preset", "ultrafast", "-tune", "zerolatency",
+                "-crf", "23", "-pix_fmt", "yuv420p"]
+    else:
+        cmd += ["-c:v", "copy"]
+    cmd += ["-c:a", "aac", "-b:a", "192k", "-ac", "2",
+            "-movflags", "frag_keyframe+empty_moov+default_base_moof",
+            "-f", "mp4", "pipe:1"]
     proc = await asyncio.create_subprocess_exec(
         *cmd,
         stdout=asyncio.subprocess.PIPE,
